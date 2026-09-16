@@ -1,6 +1,6 @@
-# J.P. Morgan Payments Developer Portal — Merchant Integrations Agent Skills
+# J.P. Morgan Payments Developer Portal — Agent Skills & MCP Server
 
-A set of [Agent Skills](https://agentskills.io/) that give GitHub Copilot, Claude Code, Cursor, and other Agent harnesses procedural knowledge of J.P. Morgan's Payments Developer Portal (PDP) APIs. They provide a conversational experience that walks you from getting started with J.P. Morgan Payments APIs to integrating with new ones and expanding your integration — without you having to re-read the docs.
+This repository is the home for AI agent tooling for J.P. Morgan's Payments Developer Portal (PDP): a set of [Agent Skills](https://agentskills.io/) in [`skills/`](#whats-inside) and a Model Context Protocol server in [`mcp/`](#mcp-server). Together they give GitHub Copilot, Claude Code, Cursor, and other Agent harnesses procedural knowledge of J.P. Morgan Payments APIs, and direct access to PDP's documentation. They provide a conversational experience that walks you from getting started with J.P. Morgan Payments APIs to integrating with new ones and expanding your integration — without you having to re-read the docs.
 
 ## Disclaimer
 
@@ -46,6 +46,12 @@ More APIs (Reporting and others) are planned for future releases.
 
 ---
 
+## MCP Server
+
+[`mcp/mcp-for-api-documentation/`](mcp/mcp-for-api-documentation/README.md) is a reference Model Context Protocol server for the PDP documentation — search, read, and discover related PDP API docs from any MCP-compatible agent. See its own [README](mcp/mcp-for-api-documentation/README.md) for installation and usage instructions.
+
+---
+
 ## Installation
 
 The skills are written in the open [Agent Skills](https://agentskills.io/) format and load in any compatible Agent harness. Below are the install paths:
@@ -55,7 +61,7 @@ The skills are written in the open [Agent Skills](https://agentskills.io/) forma
 [`npx skills`](https://www.skills.sh/) detects your Agent harness and installs into the right directory automatically:
 
 ```bash
-npx skills add jpmorgan-payments/pdp-skills
+npx skills add jpmorgan-payments/ai
 ```
 
 ### Claude Code
@@ -67,7 +73,7 @@ The fastest path is the Claude Code plugin manager — this repository ships as 
 Inside Claude Code, run:
 
 ```text
-/plugin marketplace add https://github.com/jpmorgan-payments/pdp-skills
+/plugin marketplace add https://github.com/jpmorgan-payments/ai
 /plugin install jpm-payments-skills@jpm-payments-skills
 ```
 
@@ -84,7 +90,7 @@ To update later:
 If you'd rather copy the skills directly into your project, Claude Code auto-discovers any skills under `.claude/skills/`:
 
 ```bash
-git clone https://github.com/jpmorgan-payments/pdp-skills /tmp/jpm-skills
+git clone https://github.com/jpmorgan-payments/ai /tmp/jpm-skills
 mkdir -p .claude/skills
 cp -r /tmp/jpm-skills/skills/jpm-* .claude/skills/
 ```
@@ -96,7 +102,7 @@ For a user-level install (every Claude Code project sees the skills), copy into 
 GitHub Copilot automatically discovers skills placed in `.github/skills/` at the root of your repository. No extra configuration is needed.
 
 ```bash
-git clone https://github.com/jpmorgan-payments/pdp-skills /tmp/jpm-skills
+git clone https://github.com/jpmorgan-payments/ai /tmp/jpm-skills
 mkdir -p .github/skills
 cp -r /tmp/jpm-skills/skills/jpm-* .github/skills/
 ```
@@ -142,10 +148,15 @@ Start with the first skill — it hands off automatically through the full seque
 │   └── marketplace.json
 ├── .github/
 │   └── workflows/                    # daily GitHub traffic-metrics collection
-├── skills/                           # the three agent skills
+├── skills/                           # the agent skills
 │   ├── jpm-integrations-get-started/
 │   ├── jpm-oauth/
-│   └── jpm-merchant-integrations/
+│   ├── jpm-merchant-integrations/
+│   ├── jpm-csr/
+│   └── jpm-notifications/
+├── mcp/                               # the MCP server (folded in from pdp-mcp)
+│   ├── mcp-for-api-documentation/
+│   └── metrics/
 ├── LICENSE
 └── README.md
 ```
