@@ -1,0 +1,44 @@
+name: Sync skills into provider plugins
+
+# skills/ is the source of truth; providers/*/plugin/skills/ are copies. This keeps them in
+# step so a skill change can't ship to one harness and silently miss the others.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "skills/**"
+      - "scripts/sync-plugins.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Sync
+        run: node scripts/sync-plugins.mjs
+
+      - name: Commit if anything changed
+        run: |
+          git add providers
+
+          if git diff --staged --quiet; then
+            echo "Provider plugins already in sync, nothing to commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: sync skills into provider plugins"
+          git push

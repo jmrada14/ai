@@ -1,0 +1,41 @@
+name: Guard synced skills
+
+# providers/*/plugin/skills/ is a copy of skills/, rewritten by scripts/sync-plugins.mjs.
+# A hand edit there looks like it works, then disappears on the next sync.
+#
+# This only comments — it does not request changes. Unlike stripe/ai (whose skills come from
+# an external source, so any local edit is wrong), our skills are authored in this repo, so a
+# correct PR legitimately touches skills/ and the synced copies together. Blocking on the
+# path alone would reject those.
+
+on:
+  pull_request:
+    paths:
+      - "providers/*/plugin/skills/**"
+
+permissions:
+  pull-requests: write
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          gh pr comment "$PR_URL" --body "$(cat <<'EOF'
+          This PR touches `providers/*/plugin/skills/`, which is a copy of `skills/` written
+          by `scripts/sync-plugins.mjs`. Hand edits there are overwritten by the next sync.
+
+          If you meant to change skill content, edit `skills/`, then run:
+
+          ```bash
+          node scripts/sync-plugins.mjs
+          ```
+
+          and commit the refreshed copies alongside your source change. If that's what this
+          PR already does, no action needed.
+          EOF
+          )"
