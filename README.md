@@ -29,49 +29,47 @@ Each component has its own README with full setup and usage instructions.
 
 ## Agent skills
 
-[Agent Skills](https://agentskills.io/) are instructions your agent loads on demand to build faster and more accurately. This repository ships five, covering onboarding through integration.
+[Agent skills](https://agentskills.io/) are instructions that agents can use to build faster and more accurately. J.P. Morgan Payments offers a collection of skills that help your agents use the latest best practices when building with the J.P. Morgan Payments APIs.
 
-| Skill | Command | What it does |
-| ----- | ------- | ------------ |
-| `jpm-csr` | `/jpm-csr` | Generates a CSR + private key to send to your Relationship Manager — start here if you don't have credentials yet |
-| `jpm-integrations-get-started` | `/jpm-integrations-get-started` | Goal triage, credential check, and `.env` setup |
-| `jpm-oauth` | `/jpm-oauth` | Generates a working OAuth module (JWT signing + IDAnywhere token exchange) with token caching built in |
-| `jpm-merchant-integrations` | `/jpm-merchant-integrations` | Integrates one API at a time — Checkout, Online Payments, Tokenization, 3-D Secure, Account Updater |
-| `jpm-notifications` | `/jpm-notifications` | Receives and verifies inbound webhook events instead of polling |
+If you use one of these popular agent harnesses, we recommend installing the official J.P. Morgan Payments plugins, which bundle every skill and update automatically.
 
-Run `/jpm-integrations-get-started` to begin — it hands off through `jpm-oauth` to `jpm-merchant-integrations` automatically. Any prompt matching a skill's description also triggers it without the slash command.
+### Claude Code
 
-### Install
-
-If you use one of these harnesses, install the plugin — it bundles all five skills and updates in place.
-
-**Claude Code**
+Run these commands in your project:
 
 ```text
 /plugin marketplace add https://github.com/jpmorgan-payments/ai
 /plugin install jpm-payments-skills@jpm-payments-skills
 ```
 
-**Codex**
+### Codex
+
+Run these commands in your project:
 
 ```bash
 codex plugin marketplace add jpmorgan-payments/ai
 codex plugin add jpm-payments-skills@jpm-payments
 ```
 
-**Cursor**
+### Cursor
+
+Run this command in your project:
 
 ```text
 /add-plugin jpm-payments-skills
 ```
 
-**Any harness** — [`npx skills`](https://www.skills.sh/) detects your harness and installs into the right directory:
+## Manual installation
+
+> Manually installed skills don't auto-update. Run `npx skills update -y` to get the latest versions.
+
+Run this command in your project:
 
 ```bash
 npx skills add jpmorgan-payments/ai
 ```
 
-See the [Agent Skills README](skills/README.md) for GitHub Copilot, manual and local installs, and per-skill detail.
+See the [Agent Skills README](skills/README.md) for GitHub Copilot, local installs, and per-skill detail.
 
 ---
 
