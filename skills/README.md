@@ -14,7 +14,7 @@ These skills rely on AI agents to produce code, and **all generated code must be
 
 ## What's Inside
 
-This repository ships **three Agent Skills** that chain together, plus two more you can use on their own: the standalone **`jpm-csr`** onboarding helper (generate a CSR) and **`jpm-notifications`**, a companion to `jpm-merchant-integrations` for receiving inbound webhook events.
+This repository ships a set of Agent Skills. Some chain together to take you from onboarding through your first integration, while others stand on their own: **`jpm-csr`** is a standalone onboarding helper (generate a CSR), and **`jpm-notifications`** is a companion to `jpm-merchant-integrations` for receiving inbound webhook events.
 
 | Skill | Path | Purpose |
 | ----- | ---- | ------- |
@@ -142,7 +142,7 @@ Start with the first skill — it hands off automatically through the full seque
 │   └── marketplace.json
 ├── .github/
 │   └── workflows/                    # daily GitHub traffic-metrics collection
-├── skills/                           # the three agent skills
+├── skills/                           
 │   ├── jpm-integrations-get-started/
 │   ├── jpm-oauth/
 │   └── jpm-merchant-integrations/
