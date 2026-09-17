@@ -89,3 +89,5 @@ Once one event family is flowing in CAT, ask if the merchant wants to wire addit
 - Verify signature **before** parsing the JSON body. The signature is over raw bytes; reparsing and re-serializing changes whitespace and breaks verification.
 - Do not block inside the handler. JPM retries on slow responses and you'll get duplicate deliveries. Return 200 fast, process async.
 - Do not write CAT webhook URLs into PROD config or vice versa. Endpoint registration is per-environment.
+
+<!-- ci-test: throwaway edit to fire guard-skills paths filter -->
