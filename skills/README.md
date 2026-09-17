@@ -111,9 +111,19 @@ codex plugin add jpm-payments-skills@jpm-payments
 
 ### Cursor
 
-Cursor's public marketplace is curated — plugins are distributed as Git repositories and reviewed by the Cursor team before listing. Until this plugin is listed there, use one of the following.
+In Cursor's Chat or Agent window, run:
 
-**Team marketplace** (Teams and Enterprise plans) — in the Cursor dashboard, go to **Plugins & MCPs → Team Marketplaces → Add Marketplace** and use **Import from Repo** with this repository's URL. Teammates then install `jpm-payments-skills` from **Customize**. Turning on **Auto Refresh** under Marketplace Settings picks up new pushes automatically — it needs the Cursor GitHub App on the repository and re-indexes at most once every 10 minutes.
+```text
+/add-plugin jpm-payments-skills
+```
+
+Cursor prompts for an install scope — **User** to sync it across your account, or **Project** to limit it to the current workspace. Requires Cursor 2.5 or later, and resolves against the marketplaces you have access to: Cursor's official marketplace (curated — repositories are submitted to and reviewed by the Cursor team) plus any team marketplace your organization has added.
+
+Installed plugins are managed from **Customize** in the sidebar, where the five `jpm-*` skills appear under **Agent Decides** and can also be invoked directly as `/jpm-…`.
+
+If the plugin isn't available to you from a marketplace yet, use one of the following.
+
+**Team marketplace** (Teams and Enterprise plans) — in the Cursor dashboard, go to **Plugins & MCPs → Team Marketplaces → Add Marketplace** and use **Import from Repo** with this repository's URL. Teammates can then install it as above. Turning on **Auto Refresh** under Marketplace Settings picks up new pushes automatically — it needs the Cursor GitHub App on the repository and re-indexes at most once every 10 minutes.
 
 **Local install** — copy the Cursor plugin into Cursor's local plugin folder:
 
