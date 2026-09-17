@@ -29,7 +29,7 @@ Each component has its own README with full setup and usage instructions.
 
 ## Agent skills
 
-[Agent skills](https://agentskills.io/) are instructions that agents can use to build faster and more accurately. J.P. Morgan Payments offers a collection of skills that help your agents use the latest best practices when building with the J.P. Morgan Payments APIs.
+[Agent skills](https://agentskills.io/) are instructions that agents can use to build faster and more accurately. J.P. Morgan Payments offers a collection of skills that give your agents working knowledge of the J.P. Morgan Payments APIs — onboarding, authentication, and integration.
 
 If you use one of these popular agent harnesses, we recommend installing the official J.P. Morgan Payments plugins, which bundle every skill and update automatically.
 
