@@ -1,31 +1,35 @@
 name: Guard synced skills
 
-# providers/*/plugin/skills/ is a copy of skills/, rewritten by scripts/sync-plugins.mjs.
-# A hand edit there looks like it works, then disappears on the next sync.
+# providers/*/plugin/skills/ is generated from skills/ by scripts/sync-plugins.mjs, so hand
+# edits there are lost on the next sync. Comments only: a correct PR touches both.
 #
-# This only comments — it does not request changes. Unlike stripe/ai (whose skills come from
-# an external source, so any local edit is wrong), our skills are authored in this repo, so a
-# correct PR legitimately touches skills/ and the synced copies together. Blocking on the
-# path alone would reject those.
+# pull_request_target, not pull_request, because fork PRs get a read-only token. Safe only
+# while this job never checks out or runs PR code. Always loaded from the default branch.
 
 on:
-  pull_request:
+  pull_request_target:
     paths:
       - "providers/*/plugin/skills/**"
 
-permissions:
-  pull-requests: write
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   remind:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write # post the comment
     steps:
       - name: Comment
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
-          gh pr comment "$PR_URL" --body "$(cat <<'EOF'
+          gh pr comment "$PR_URL" --body-file - <<'EOF'
           This PR touches `providers/*/plugin/skills/`, which is a copy of `skills/` written
           by `scripts/sync-plugins.mjs`. Hand edits there are overwritten by the next sync.
 
@@ -38,4 +42,3 @@ jobs:
           and commit the refreshed copies alongside your source change. If that's what this
           PR already does, no action needed.
           EOF
-          )"
