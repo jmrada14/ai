@@ -27,6 +27,54 @@ Each component has its own README with full setup and usage instructions.
 
 ---
 
+## Agent skills
+
+[Agent Skills](https://agentskills.io/) are instructions your agent loads on demand to build faster and more accurately. This repository ships five, covering onboarding through integration.
+
+| Skill | Command | What it does |
+| ----- | ------- | ------------ |
+| `jpm-csr` | `/jpm-csr` | Generates a CSR + private key to send to your Relationship Manager — start here if you don't have credentials yet |
+| `jpm-integrations-get-started` | `/jpm-integrations-get-started` | Goal triage, credential check, and `.env` setup |
+| `jpm-oauth` | `/jpm-oauth` | Generates a working OAuth module (JWT signing + IDAnywhere token exchange) with token caching built in |
+| `jpm-merchant-integrations` | `/jpm-merchant-integrations` | Integrates one API at a time — Checkout, Online Payments, Tokenization, 3-D Secure, Account Updater |
+| `jpm-notifications` | `/jpm-notifications` | Receives and verifies inbound webhook events instead of polling |
+
+Run `/jpm-integrations-get-started` to begin — it hands off through `jpm-oauth` to `jpm-merchant-integrations` automatically. Any prompt matching a skill's description also triggers it without the slash command.
+
+### Install
+
+If you use one of these harnesses, install the plugin — it bundles all five skills and updates in place.
+
+**Claude Code**
+
+```text
+/plugin marketplace add https://github.com/jpmorgan-payments/ai
+/plugin install jpm-payments-skills@jpm-payments-skills
+```
+
+**Codex**
+
+```bash
+codex plugin marketplace add jpmorgan-payments/ai
+codex plugin add jpm-payments-skills@jpm-payments
+```
+
+**Cursor**
+
+```text
+/add-plugin jpm-payments-skills
+```
+
+**Any harness** — [`npx skills`](https://www.skills.sh/) detects your harness and installs into the right directory:
+
+```bash
+npx skills add jpmorgan-payments/ai
+```
+
+See the [Agent Skills README](skills/README.md) for GitHub Copilot, manual and local installs, and per-skill detail.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Likely cause | What to try |
