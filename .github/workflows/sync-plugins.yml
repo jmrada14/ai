@@ -5,13 +5,10 @@ name: Sync skills into provider plugins
 
 on:
   push:
-    branches:
-      - main
-      - feature/packagePlugins # TEMP: exercise this workflow on the branch before merge.
+    branches: [main]
     paths:
       - "skills/**"
       - "scripts/sync-plugins.mjs"
-      - ".github/workflows/sync-plugins.yml" # TEMP: lets a change to this file trigger itself.
   workflow_dispatch:
 
 permissions: {}
