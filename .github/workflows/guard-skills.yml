@@ -11,10 +11,15 @@ name: Guard synced skills
 # SAFETY — why pull_request_target is used here, and the invariant that keeps it safe:
 # On `pull_request`, fork PRs get a read-only GITHUB_TOKEN, so the comment step fails with
 # 403 — the workflow was broken for exactly the community PRs it exists to help.
-# pull_request_target runs the *base branch's* workflow definition with a read/write token,
-# which fixes that. It is only safe because this job never checks out, builds, installs, or
-# executes PR head code — it reads event metadata and posts a comment, nothing else.
-# Do not add a checkout step to this workflow.
+# pull_request_target gets a read/write token instead, which fixes that. It is only safe
+# because this job never checks out, builds, installs, or executes PR head code — it reads
+# event metadata and posts a comment, nothing else. Do not add a checkout step here.
+#
+# GOTCHA: pull_request_target always loads this file from the repository's *default branch*,
+# not from the PR's base or head. So edits here take effect only once merged to main, and
+# this workflow cannot be exercised from a feature branch — a PR targeting a branch that
+# carries a modified copy will still run main's version. (That is also what stops a
+# malicious PR from rewriting a privileged workflow to steal the token.)
 
 on:
   pull_request_target:
