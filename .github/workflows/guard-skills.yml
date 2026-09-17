@@ -7,25 +7,39 @@ name: Guard synced skills
 # an external source, so any local edit is wrong), our skills are authored in this repo, so a
 # correct PR legitimately touches skills/ and the synced copies together. Blocking on the
 # path alone would reject those.
+#
+# SAFETY — why pull_request_target is used here, and the invariant that keeps it safe:
+# On `pull_request`, fork PRs get a read-only GITHUB_TOKEN, so the comment step fails with
+# 403 — the workflow was broken for exactly the community PRs it exists to help.
+# pull_request_target runs the *base branch's* workflow definition with a read/write token,
+# which fixes that. It is only safe because this job never checks out, builds, installs, or
+# executes PR head code — it reads event metadata and posts a comment, nothing else.
+# Do not add a checkout step to this workflow.
 
 on:
-  pull_request:
+  pull_request_target:
     paths:
       - "providers/*/plugin/skills/**"
 
-permissions:
-  pull-requests: write
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   remind:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write # Needed to post the reminder comment on the PR.
     steps:
       - name: Comment
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
-          gh pr comment "$PR_URL" --body "$(cat <<'EOF'
+          gh pr comment "$PR_URL" --body-file - <<'EOF'
           This PR touches `providers/*/plugin/skills/`, which is a copy of `skills/` written
           by `scripts/sync-plugins.mjs`. Hand edits there are overwritten by the next sync.
 
@@ -38,4 +52,3 @@ jobs:
           and commit the refreshed copies alongside your source change. If that's what this
           PR already does, no action needed.
           EOF
-          )"

@@ -5,24 +5,37 @@ name: Sync skills into provider plugins
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - feature/packagePlugins # TEMP: exercise this workflow on the branch before merge.
     paths:
       - "skills/**"
       - "scripts/sync-plugins.mjs"
+      - ".github/workflows/sync-plugins.yml" # TEMP: lets a change to this file trigger itself.
   workflow_dispatch:
 
-permissions:
-  contents: write
+permissions: {}
+
+concurrency:
+  # Serialised, not cancelled: this job pushes a commit, so an interrupted run could leave
+  # the provider copies half-written.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # Needed to push the refreshed provider copies back to the branch.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          persist-credentials: true
+          # The token is supplied to the push step only, so it is not left in .git/config
+          # where the sync script or any of its dependencies could read it.
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: "20"
 
@@ -30,7 +43,11 @@ jobs:
         run: node scripts/sync-plugins.mjs
 
       - name: Commit if anything changed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -uo pipefail
+
           git add providers
 
           if git diff --staged --quiet; then
@@ -41,4 +58,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "chore: sync skills into provider plugins"
-          git push
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            "HEAD:${GITHUB_REF_NAME}"
