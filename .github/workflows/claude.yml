@@ -1,0 +1,46 @@
+name: Claude
+
+# Runs Claude Code on a GitHub-hosted runner when someone with write access mentions @claude in
+# a PR comment, inline review comment, or review body. Claude can push commits, so the job only
+# starts for the owner or collaborators: this is a public repo and anyone can post a comment.
+#
+# Pinned to this fork. Files on a branch based on this fork's main travel with upstream PRs, and
+# the guard keeps the job inert if they ever land there.
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.issue.number || github.event.pull_request.number }}
+  cancel-in-progress: false # this job pushes
+
+jobs:
+  claude:
+    if: >-
+      github.repository == 'jmrada14/ai' &&
+      contains(github.event.comment.body || github.event.review.body, '@claude') &&
+      contains(fromJSON('["OWNER", "COLLABORATOR"]'),
+        github.event.comment.author_association || github.event.review.author_association)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write # push Claude's commits
+      pull-requests: write # reply on the PR
+      issues: write # PR conversation comments go through the issues API
+      id-token: write # exchange the OIDC token for a Claude GitHub App token
+      actions: read # read CI results on the PR
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 1
+
+      - uses: anthropics/claude-code-action@6d5ae526d25ce88daa2200be073e1a373167f064 # v1.0.265
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
