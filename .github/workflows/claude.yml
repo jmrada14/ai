@@ -44,3 +44,12 @@ jobs:
       - uses: anthropics/claude-code-action@6d5ae526d25ce88daa2200be073e1a373167f064 # v1.0.265
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+      # The action redacts Claude's output, so a failed run doesn't say why. Print only the error
+      # fields rather than turning on show_full_output, because these logs are public.
+      - name: Show failure reason
+        if: failure()
+        run: |
+          jq '.[] | select(.type == "result")
+            | {api_error_status, terminal_reason, result: (.result // "" | .[0:300])}' \
+            "$RUNNER_TEMP/claude-execution-output.json"
