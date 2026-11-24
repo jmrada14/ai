@@ -19,7 +19,7 @@ Authentication is handled by the merchant's auth module (set up via the `jpm-oau
 | Env | URL | Env var |
 |-----|-----|---------|
 | CAT | `https://api.reports.test.jpmorgan.com` | `JPM_REPORTING_URL` |
-| PROD | `https://api.payments.jpmorgan.com` | `JPM_REPORTING_URL` |
+| PROD | `https://api.reports.jpmorgan.com` | `JPM_REPORTING_URL` |
 
 Reporting doesn't share the `api-ms` host root used by Online Payments, 3DS, and Account Updater, and its CAT and PROD hosts sit on different domains — never derive one from the other. `JPM_REPORTING_URL` holds the host only, because the paths don't share one prefix: everything is under `/api/v1/…` except reporting groups, which are under `/v1/…`. Keep both as written — normalizing to one prefix will 404. If the merchant's RM provides a different Reporting host, use that.
 
@@ -55,7 +55,7 @@ Generating a report doesn't return a link to it. `POST /api/v1/reports` only sta
 2. Wait until the run completes: poll `GET /api/v1/reports/{reportId}` or wait for a `reportStatusNotification` (see `jpm-notifications`).
 3. `GET /api/v1/reports/{reportId}`. The fields under **`reportDetails.url`** in the response hold the URL for viewing the report.
 
-Tell the merchant about this second call when you build or explain a Reporting integration. Code that stops after the `POST` has no way to show the user their report. If the merchant wants the file contents rather than a link, use `GET /api/v1/report-files/{reportId}` instead (see [Report Files](#report-files)).
+Tell the merchant about this second call when you build or explain a Reporting integration. Code that stops after the `POST` has no way to show the user their report. If the merchant wants the file contents rather than a link, use `GET /api/v1/report-files/{reportId}` instead (see [Retrieve report files](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fdocs%2Fcommerce%2Foptimization-protection%2Fcapabilities%2Freporting%2Fhow-to%2Fretrieve-reports.md)).
 
 ## Relevant Documentation
 
@@ -65,7 +65,7 @@ Tell the merchant about this second call when you build or explain a Reporting i
 - [Reporting groups](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fdocs%2Fcommerce%2Foptimization-protection%2Fcapabilities%2Freporting%2Freporting-groups.md) Let one report cover a set of entities instead of listing `entityIds` per call.
 - [Attribute glossary](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fdocs%2Fcommerce%2Foptimization-protection%2Fcapabilities%2Freporting%2Fattribute-catalogue.md) Valid values and definitions for attributes in the 3000 series report types.
 - [Pagination](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fdocs%2Fcommerce%2Foptimization-protection%2Fcapabilities%2Freporting%2Fpagination.md) Retrieve long-running reports without exceeding time-out limits.
-- [Notifications](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fdocs%2Fcommerce%2Foptimization-protection%2Fcapabilities%2Freporting%2Fnotifications.md) Integrate with the Notifications API to receive report status updates.
+- [Notifications](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fdocs%2Fcommerce%2Foptimization-protection%2Fcapabilities%2Fnotifications%2Foverview.md) Integrate with the Notifications API to receive report status updates.
 - [Testing](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fdocs%2Fcommerce%2Foptimization-protection%2Fcapabilities%2Freporting%2Ftesting.md) Downloadable sample reports for creating test scenarios.
 
 ###### Integration options
@@ -103,257 +103,43 @@ Tell the merchant about this second call when you build or explain a Reporting i
 - [Retrieve report details](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fdocs%2Fcommerce%2Foptimization-protection%2Fcapabilities%2Freporting%2Fhow-to%2Fretrieve-report-details.md) Retrieve report details for all or individual reports.
 - [Retrieve report files](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fdocs%2Fcommerce%2Foptimization-protection%2Fcapabilities%2Freporting%2Fhow-to%2Fretrieve-reports.md) Download reports via JSON payload or Commerce Center portal.
 - [Manage reporting groups](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fdocs%2Fcommerce%2Foptimization-protection%2Fcapabilities%2Freporting%2Fhow-to%2Fmanage-reporting-groups.md) Create, retrieve, and update reporting groups.
-- [Reconcile standard reports](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fdocs%2Fcommerce%2Foptimization-protection%2Fcapabilities%2Freporting%2Fhow-to%2Freconcile-standard-reports.md) Reconcile data across the payment lifecycle using standard reports.
 
 ---
 
 ## Sample Requests
 
-Use these sample requests to understand how to interact with the Reporting API and implement the quick and custom integration options. When generating code use these examples as a reference. Values in `{…}` are placeholders; `<…>` tokens are sent as-is.
+Use these sample requests to understand how to interact with the Reporting API and implement the quick and custom integration options. When generating code use these examples as a reference. Open a request to see its full payload.
 
-### Report Types
+### [Reporting / Report Types](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Reporting/Report%20Types)
 
-**Get a list of available report types**
+| Request | Method | Endpoint |
+| --- | --- | --- |
+| [Get a list of available report types](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Reporting/Report%20Types/Get%20a%20list%20of%20available%20report%20types.bru) | GET | `{{reporting_url}}/report-types` |
+| [Get details for a specific report type](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Reporting/Report%20Types/Get%20details%20for%20a%20specific%20report%20type.bru) | GET | `{{reporting_url}}/report-types/{{reportTypeId}}` |
 
-```http
-GET /api/v1/report-types
-Authorization: Bearer {accessToken}
-Content-Type: application/json
-request-id: {requestId}
-merchant-id: {merchantId}
-```
+### [Reporting / Report Configurations](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Reporting/Report%20Configurations)
 
-**Get details for a specific report type**
+| Request | Method | Endpoint |
+| --- | --- | --- |
+| [Get a list of available report configurations](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Reporting/Report%20Configurations/Get%20a%20list%20of%20available%20report%20configurations.bru) | GET | `{{reporting_url}}/report-configs` |
+| [Get details for a specific report configuration](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Reporting/Report%20Configurations/Get%20details%20for%20a%20specific%20report%20configuration.bru) | GET | `{{reporting_url}}/report-configs/{{reportConfigId}}` |
+| [Update an existing report configuration](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Reporting/Report%20Configurations/Update%20an%20existing%20report%20configuration.bru) | PUT | `{{reporting_url}}/report-configs/{{reportConfigId}}` |
 
-```http
-GET /api/v1/report-types/{reportTypeId}
-Authorization: Bearer {accessToken}
-Content-Type: application/json
-request-id: {requestId}
-merchant-id: {merchantId}
-```
+### [Reporting / Reports](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Reporting/Reports)
 
-### Report Configurations
-
-**Get a list of available report configurations**
-
-```http
-GET /api/v1/report-configs
-Authorization: Bearer {accessToken}
-Content-Type: application/json
-request-id: {requestId}
-merchant-id: {merchantId}
-```
-
-**Get details for a specific report configuration**
-
-```http
-GET /api/v1/report-configs/{configId}
-Authorization: Bearer {accessToken}
-Content-Type: application/json
-request-id: {requestId}
-merchant-id: {merchantId}
-```
-
-**Update an existing report configuration**
-
-```http
-PUT /api/v1/report-configs/{configId}
-Authorization: Bearer {accessToken}
-Content-Type: application/json
-request-id: {requestId}
-merchant-id: {merchantId}
-
-{
-  "reportName": "{reportName}"
-}
-```
-
-### Reports
-
-**Generate a report (adhoc) — quick integration**
-
-```http
-POST /api/v1/reports
-Authorization: Bearer {accessToken}
-Content-Type: application/json
-request-id: {requestId}
-merchant-id: {merchantId}
-
-{
-  "entityType": "PE",
-  "entityIds": ["{entityId}"],
-  "reportSections": [
-    { "sectionReportTypeId": "{reportTypeId}", "sectionReportTypeName": "{reportTypeName}" }
-  ],
-  "frequencyConfig": {
-    "scheduleFrequency": "adhoc",
-    "reportingPeriodStartTimestamp": "{YYYY-MM-DD HH:MM:SS}",
-    "reportingPeriodEndTimestamp": "{YYYY-MM-DD HH:MM:SS}"
-  }
-}
-```
-
-**Generate a report (adhoc) — custom integration**
-
-```http
-POST /api/v1/reports
-Authorization: Bearer {accessToken}
-Content-Type: application/json
-request-id: {requestId}
-merchant-id: {merchantId}
-
-{
-  "entityIds": ["{entityId}"],
-  "reportSections": [
-    {
-      "sectionReportTypeName": "{reportTypeName}",
-      "sectionReportTypeId": "{reportTypeId}",
-      "sectionSelectedFields": [
-        { "alias": "{columnName}", "constantValueText": "{constantValue}" },
-        { "reportAttributeName": "{attributeName}" }
-      ],
-      "sectionSortOrderList": [
-        { "reportAttributeName": "{attributeName}", "sortOrderCode": "asc" }
-      ],
-      "sectionFilterAttributeList": [
-        { "reportAttributeName": "{attributeName}", "filterAttributeCode": "=\"{value}\"" }
-      ]
-    }
-  ],
-  "fileDelimiter": ",",
-  "csvColumnNameDisplayIndicator": true,
-  "reportConfigurationName": "{configName}",
-  "reportConfigStatus": "active",
-  "reportName": "{reportName}",
-  "frequencyConfig": {
-    "scheduleFrequency": "adhoc",
-    "reportingPeriodStartTimestamp": "{YYYY-MM-DD HH:MM:SS}",
-    "reportingPeriodEndTimestamp": "{YYYY-MM-DD HH:MM:SS}"
-  }
-}
-```
-
-**Generate a report (daily) — custom integration**
-
-```http
-POST /api/v1/reports
-Authorization: Bearer {accessToken}
-Content-Type: application/json
-request-id: {requestId}
-merchant-id: {merchantId}
-
-{
-  "entityIds": ["{entityId}"],
-  "reportSections": [
-    {
-      "sectionReportTypeName": "{reportTypeName}",
-      "sectionReportTypeId": "{reportTypeId}",
-      "sectionSelectedFields": [
-        { "alias": "{columnName}", "constantValueText": "{constantValue}" },
-        { "reportAttributeName": "{attributeName}" }
-      ],
-      "sectionSortOrderList": [
-        { "reportAttributeName": "{attributeName}", "sortOrderCode": "asc" }
-      ],
-      "sectionFilterAttributeList": [
-        { "reportAttributeName": "{attributeName}", "filterAttributeCode": "=\"{value}\"" }
-      ]
-    }
-  ],
-  "fileDelimiter": ",",
-  "reportConfigurationName": "{configName}",
-  "reportFileName": "{fileNamePrefix},<Processing Entity ID>.<Report Type>.<frequency>.<From Date YYYY-MM-DD>.<To Date YYYY-MM-DD>",
-  "reportHeader": "HDSR,<Processing Entity ID>,<Report Type>,<frequency>,<From Date YYYY-MM-DD>,<To Date YYYY-MM-DD>,<Generation Date YYYY-MM-DD>,<Generation Time HH:MM:SS>",
-  "fileHeader": "BEGIN,ProcessingEntityId=<Processing Entity ID>,Frequency=<frequency>",
-  "fileTrailer": "END,ProcessingEntityId=<Processing Entity ID>,Frequency=<frequency>",
-  "csvColumnNameDisplayIndicator": true,
-  "reportConfigStatus": "active",
-  "reportName": "{reportName}",
-  "frequencyConfig": {
-    "scheduleFrequency": "daily",
-    "reportFileScheduledTime": "{HH:MM:SS}",
-    "reportingPeriodStartTime": "{HH:MM:SS}"
-  }
-}
-```
-
-**Get a list of available reports** — optionally filter with `?reportStartDate={YYYY-MM-DD}`
-
-```http
-GET /api/v1/reports
-Authorization: Bearer {accessToken}
-Content-Type: application/json
-request-id: {requestId}
-merchant-id: {merchantId}
-```
-
-**Get details for a specific report.** Call this after generating a report: the URL to view it is under `reportDetails.url` in the response (see [Getting the report URL](#getting-the-report-url)).
-
-```http
-GET /api/v1/reports/{reportId}
-Authorization: Bearer {accessToken}
-Content-Type: application/json
-request-id: {requestId}
-merchant-id: {merchantId}
-```
-
-### Report Files
-
-**Download a report file**
-
-```http
-GET /api/v1/report-files/{reportId}
-Authorization: Bearer {accessToken}
-Content-Type: application/json
-request-id: {requestId}
-merchant-id: {merchantId}
-```
-
-### Reporting Groups
-
-**Get reporting groups**
-
-```http
-GET /v1/reporting-groups?groupType={groupType}&groupId={groupId}
-Authorization: Bearer {accessToken}
-Content-Type: application/json
-request-id: {requestId}
-merchant-id: {merchantId}
-```
-
-**Create a reporting group**
-
-```http
-POST /v1/reporting-groups
-Authorization: Bearer {accessToken}
-Content-Type: application/json
-request-id: {requestId}
-merchant-id: {merchantId}
-
-{
-  "reportingGroupName": "{groupName}",
-  "reportingGroupDescription": "{groupDescription}",
-  "childEntityInfo": [
-    {
-      "entityType": "PE",
-      "entityIds": ["{entityId}"]
-    }
-  ]
-}
-```
-
-**Update a reporting group**
-
-```http
-PATCH /v1/reporting-groups/{groupId}
-Authorization: Bearer {accessToken}
-Content-Type: application/json
-request-id: {requestId}
-merchant-id: {merchantId}
-
-{
-  "reportingGroupType": "RGPE",
-  "reportingGroupStatus": "inactive"
-}
-```
+| Request | Method | Endpoint |
+| --- | --- | --- |
+| [Generate a report (Authorization Details report)](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Reporting/Reports/Generate%20a%20report%20%28Authorization%20Details%20report%29.bru) | POST | `{{reporting_url}}/reports` |
+| [Generate a report (Charge Summary report)](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Reporting/Reports/Generate%20a%20report%20%28Charge%20Summary%20report%29.bru) | POST | `{{reporting_url}}/reports` |
+| [Generate a report (Deposit Activity Summary report)](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Reporting/Reports/Generate%20a%20report%20%28Deposit%20Activity%20Summary%20report%29.bru) | POST | `{{reporting_url}}/reports` |
+| [Generate a report (Deposit Details report)](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Reporting/Reports/Generate%20a%20report%20%28Deposit%20Details%20report%29.bru) | POST | `{{reporting_url}}/reports` |
+| [Generate a report (Dispute Details report)](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Reporting/Reports/Generate%20a%20report%20%28Dispute%20Details%20report%29.bru) | POST | `{{reporting_url}}/reports` |
+| [Generate a report (Exception Details report)](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Reporting/Reports/Generate%20a%20report%20%28Exception%20Details%20report%29.bru) | POST | `{{reporting_url}}/reports` |
+| [Generate a report (Financial Activity Summary report)](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Reporting/Reports/Generate%20a%20report%20%28Financial%20Activity%20Summary%20report%29.bru) | POST | `{{reporting_url}}/reports` |
+| [Generate a report (Funded Transaction Fee Details report)](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Reporting/Reports/Generate%20a%20report%20%28Funded%20Transaction%20Fee%20Details%20report%29.bru) | POST | `{{reporting_url}}/reports` |
+| [Generate a report (Interchange Qualification report)](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Reporting/Reports/Generate%20a%20report%20%28Interchange%20Qualification%20report%29.bru) | POST | `{{reporting_url}}/reports` |
+| [Generate a report (Transaction Fee Details report)](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Reporting/Reports/Generate%20a%20report%20%28Transaction%20Fee%20Details%20report%29.bru) | POST | `{{reporting_url}}/reports` |
+| [Generate a report (adhoc)](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Reporting/Reports/Generate%20a%20report%20%28adhoc%29.bru) | POST | `{{reporting_url}}/reports` |
+| [Generate a report (daily)](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Reporting/Reports/Generate%20a%20report%20%28daily%29.bru) | POST | `{{reporting_url}}/reports` |
+| [Get a list of available reports](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Reporting/Reports/Get%20a%20list%20of%20available%20reports.bru) | GET | `{{reporting_url}}/reports` |
+| [Get details for a specific report](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Reporting/Reports/Get%20details%20for%20a%20specific%20report.bru) | GET | `{{reporting_url}}/reports/{{reportId}}` |

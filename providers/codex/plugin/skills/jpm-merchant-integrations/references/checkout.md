@@ -115,49 +115,6 @@ endpoint POST /api/create-checkout-session:
     return { checkoutSessionToken: data.checkoutSessionToken, merchantOrderNumber }
 ```
 
-**Sample checkout intent request:**
-
-```http
-POST https://merchant-api.checkout-cat.merchant.jpmorgan.com/v1/checkout/intent
-Content-Type: application/json
-Authorization: Bearer eyJ0eXAiOiJKV1Qi…
-merchantId: 1234567891011
-requestId: cffbe6dbfb94bce8a1b2c3
-
-{
-  "merchantOrderNumber": "1773250868",
-  "currencyCode": "USD",
-  "cart": {
-    "totalTransactionAmount": 4999
-  },
-  "consumer": {
-    "email": "customer@example.com",
-    "billingAddress": {
-      "recipientFullName": "John Smith",
-      "line1": "1 Main St",
-      "city": "San Francisco",
-      "state": "CA",
-      "country": "US",
-      "postalCode": "95000"
-    }
-  },
-  "checkoutOptions": {
-    "authorization": { "authorizationType": "AUTH_METHOD_CART_AMOUNT" },
-    "capture": { "captureMethod": "CAPTURE_METHOD_NOW" },
-    "consumerProfileOptions": { "isSaveConsumerProfile": "false" }
-  }
-}
-```
-
-**Sample checkout intent response:**
-
-```json
-{
-  "checkoutSessionToken": "eyJraWQiOiIzMDEyZWU1ZC1iMDE2LTQ4ZDEt…",
-  "merchantOrderNumber": "1773250868"
-}
-```
-
 Your backend server returns the `checkoutSessionToken` back to your web app, where it will be used to render the Checkout form using the JavaScript library.
 
 [Documentation](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fdocs%2Fcommerce%2Fonline-payments%2Fcapabilities%2Fcheckout%2Fhow-to%2Fcreate-a-checkout-session.md)
@@ -242,15 +199,19 @@ Step 4: Frontend — Load the Drop-in UI Script
 
 Add the Drop-in UI script to your HTML. The script registers a global `DropInUI` class — no npm package needed.
 
+Load **exactly one** script tag, for the same environment as `JPM_CHECKOUT_API_URL`:
+
+| Environment | Script URL |
+| ------- | --------- |
+| CAT (pre-prod) | `https://checkout-cat.merchant.jpmorgan.com/drop-in-ui.mjs` |
+| Production | `https://checkout.merchant.jpmorgan.com/drop-in-ui.mjs` |
+
 ```html
-<!-- Add to your HTML <head> -->
-<!-- CAT (pre-prod) -->
+<!-- Add to your HTML <head>. Exactly one tag; src comes from your environment config (CAT value shown). -->
 <script type="module" src="https://checkout-cat.merchant.jpmorgan.com/drop-in-ui.mjs"></script>
-<!-- Production -->
-<script type="module" src="https://checkout.merchant.jpmorgan.com/drop-in-ui.mjs"></script>
 ```
 
-The `type="module"` is required — the Drop-in UI is an ES module.
+Pick the URL from the same environment config that selects `JPM_CHECKOUT_API_URL` (e.g. a server-rendered template value or your frontend build's env), so the frontend and server can't drift apart. Don't hardcode one URL and don't ship both tags. The `type="module"` is required — the Drop-in UI is an ES module.
 
 Step 5:  Frontend — Mount the Drop-in UI and Handle Events
 The Drop-in UI renders a complete payment form (card inputs, submit button) inside a container element you provide. It handles card encryption and payment submission internally.
@@ -275,7 +236,7 @@ wait until window.DropInUI is defined (poll or use load event)
 dropin = new DropInUI({ checkoutSessionToken })
 dropin.mount("dropin-container")   // ID of a <div> in your page
 
-// 4. Subscribe to payment lifecycle events
+// 4. Subscribe to payment lifecycle events — handle every message in the table below
 dropin.subscribe(function(event):
     if event.message == "MountSuccess":
         // Payment form is rendered, hide loading spinner
@@ -283,7 +244,17 @@ dropin.subscribe(function(event):
         if event.message == "PaymentSuccess":
             // Navigate to success page, pass merchantOrderNumber
         if event.message == "PaymentUnsuccessful":
-            // Show error, consumer can retry
+            // Show decline message, consumer can retry
+        if event.message == "PaymentPending":
+            // Not a success or a failure yet (async payment methods). Show a
+            // "payment processing" state, pass merchantOrderNumber, and get the
+            // final status from your server's notifications endpoint (Step 6).
+    if event.level == "error":
+        if event.message == "PaymentError":
+            // Payment request failed. Log the event, show an error, let the consumer retry
+        else:   // "UnknownError" or any unrecognised error
+            // Unrecoverable. Log the event, show a generic error, dropin.unmount(),
+            // and offer to start checkout again with a new session
 )
 
 // 5. On page teardown / navigation away, clean up:
@@ -338,103 +309,6 @@ endpoint GET /api/notifications/{merchantOrderNumber}:
     return parse JSON response
 ```
 
-**Sample notifications request:**
-
-```http
-GET https://merchant-api.checkout-cat.merchant.jpmorgan.com/v1/checkout/notifications
-  ?merchantOrderNumber=1773254924869
-  &periodStart=2026-02-10T18:20:53Z
-  &periodEnd=2026-03-11T18:20:53Z
-Content-Type: application/json
-Authorization: Bearer eyJ0eXAiOiJKV1Qi…
-merchantId: 1234567891011
-requestId: 5512281667746c1b1234
-```
-
-**Sample notifications response:**
-
-```json
-{
-  "nextPageToken": "",
-  "messages": [
-    {
-      "tokenNotification": {
-        "responseCode": "APPROVED",
-        "responseMessage": "Transaction approved by Issuer",
-        "merchantOrderNumber": "1773254924869",
-        "requestId": "02f8594c36ed4cbc853ae5",
-        "token": "4242427761124242",
-        "tokenType": "TOKEN_TYPE_ACQUIRER",
-        "checkoutReference": "1773254924869",
-        "fraudCheckStatus": "FRAUD_CHECK_STATUS_APPROVED",
-        "status": "STATUS_SUCCESS"
-      },
-      "messageInfo": {
-        "receiptHandle": "",
-        "messageId": "9d8d7442-0a89-4c71-8c31-2ee58815405f"
-      },
-      "createdAt": "2026-03-11T18:49:06.768315Z",
-      "merchantOrderNumber": "1773254924869",
-      "requestId": "02f8594c36ed4cbc853ae5"
-    },
-    {
-      "orderNotification": {
-        "mitTransactionReference": "016070692164427",
-        "totalAmount": {
-          "currencyCode": "USD",
-          "decimalCount": 2,
-          "amount": "4999"
-        },
-        "fraudCheckResult": {
-          "deviceDataUsed": true,
-          "fraudCheckStatus": "FRAUD_CHECK_STATUS_APPROVED"
-        },
-        "accountHolder": {
-          "billingAddress": {
-            "country": "US",
-            "postalCode": "95000",
-            "recipientFullName": "John Smith",
-            "line1": "1 Main St",
-            "city": "San Francisco",
-            "state": "CA"
-          }
-        },
-        "transactionTimestamp": "2026-03-11T18:49:06.521Z",
-        "paymentMethod": {
-          "approvalCode": "tst419",
-          "maskedAccountNumber": "424242XXXXXX4242",
-          "card": {
-            "cardTypeName": "VISA",
-            "last4CardNumber": "4242",
-            "expiry": { "month": 12, "year": 2029 },
-            "networkResponse": {
-              "cardVerificationResult": "MATCH",
-              "addressVerificationResult": "ADDRESS_POSTALCODE_MATCH"
-            },
-            "cardType": "VI"
-          },
-          "paymentMethodType": "PAYMENT_METHOD_TYPE_CODE_CARD"
-        },
-        "checkoutReference": "1773254924869",
-        "status": "STATUS_SUCCESS",
-        "responseCode": "APPROVED",
-        "responseMessage": "Transaction approved by Issuer",
-        "merchantOrderNumber": "1773254924869",
-        "transactionReference": "3dcac25e-fe06-4892-b09e-13140ce44f29",
-        "last4OfCardPan": "4242"
-      },
-      "messageInfo": {
-        "receiptHandle": "",
-        "messageId": "ea2595ec-300e-4ae0-80a1-c0f18968374e"
-      },
-      "createdAt": "2026-03-11T18:49:06.778239Z",
-      "merchantOrderNumber": "1773254924869",
-      "requestId": "02f8594c36ed4cbc853ae5"
-    }
-  ]
-}
-```
-
 **Key fields in the notifications response:**
 
 | Field | Where | Meaning |
@@ -445,7 +319,7 @@ requestId: 5512281667746c1b1234
 | `orderNotification.paymentMethod.maskedAccountNumber` | `424242XXXXXX4242` | Masked card |
 | `orderNotification.paymentMethod.approvalCode` | `tst419` | Issuer approval code |
 | `orderNotification.transactionReference` | UUID | Use for refunds/queries |
-| `tokenNotification.token` | `4242427761124242` | Acquirer token |
+| `tokenNotification.token` | `4555551111111111` | Acquirer token |
 | `tokenNotification.fraudCheckStatus` | `FRAUD_CHECK_STATUS_APPROVED` | Fraud screening result |
 
 Step 7 (Optional): Verify success:
@@ -468,17 +342,100 @@ on page load:
 - [ ] Server: import `getAccessToken` from the auth module created by `jpm-oauth` (do NOT re-implement OAuth here)
 - [ ] Server: implement `POST /api/create-checkout-session` endpoint
 - [ ] Server: implement `GET /api/notifications/{merchantOrderNumber}` endpoint
-- [ ] Frontend: add Drop-in UI `<script type="module">` tag to HTML
+- [ ] Frontend: add one Drop-in UI `<script type="module">` tag to HTML, for the same environment as `JPM_CHECKOUT_API_URL`
 - [ ] Frontend: create a checkout page with `<div id="dropin-container">`
-- [ ] Frontend: call server for session token, mount Drop-in UI, subscribe to events
+- [ ] Frontend: call server for session token, mount Drop-in UI, subscribe to events — handle every event in the event bus table, including `PaymentPending`, `PaymentError` and `UnknownError`
 - [ ] Frontend: create a success page that verifies payment via notifications
 - [ ] Handle framework-specific double-initialization (e.g., React StrictMode guard) if applicable
 - [ ] Configure proxy agent if behind a corporate firewall
 - [ ] Ensure dev proxy config routes `/api` to your backend if running frontend and backend on different ports
 
-## Implementation Example
+## Sample Requests
 
-For a complete sample implementation of the Checkout API using Drop-in UI, see the [Checkout Sample App](examples/checkout-sample-app.md).
+Use these sample requests to understand how to interact with the Checkout API. When generating code use these examples as a reference.
+
+### [Checkout](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Checkout)
+
+| Request | Method | Endpoint |
+| --- | --- | --- |
+| [Pay by Bank (ACH)](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Checkout/PBB.bru) | POST | `{{checkout_url}}/intent` |
+
+### [Checkout / 00 Runbook / 01 Health Check](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Checkout/00%20Runbook/01%20Health%20Check)
+
+| Request | Method | Endpoint |
+| --- | --- | --- |
+| [01 Checkout Health Check](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Checkout/00%20Runbook/01%20Health%20Check/01%20Checkout%20Health%20Check.bru) | GET | `{{checkout_url}}/healthcheck` |
+
+### [Checkout / 00 Runbook / 02 Payment Methods](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Checkout/00%20Runbook/02%20Payment%20Methods)
+
+| Request | Method | Endpoint |
+| --- | --- | --- |
+| [01 Verify Only](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Checkout/00%20Runbook/02%20Payment%20Methods/01%20Verify%20Only.bru) | POST | `{{checkout_url}}/intent` |
+| [02 Auth Only](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Checkout/00%20Runbook/02%20Payment%20Methods/02%20Auth%20Only.bru) | POST | `{{checkout_url}}/intent` |
+| [03 Auth Capture Now](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Checkout/00%20Runbook/02%20Payment%20Methods/03%20Auth%20Capture%20Now.bru) | POST | `{{checkout_url}}/intent` |
+| [04 Auth Only (Ignore Safetech Fraud Device Data)](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Checkout/00%20Runbook/02%20Payment%20Methods/04%20Auth%20Only%20%28Ignore%20Safetech%20Fraud%20Device%20Data%29.bru) | POST | `{{checkout_url}}/intent` |
+| [05 CIT Recurring](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Checkout/00%20Runbook/02%20Payment%20Methods/05%20CIT%20Recurring.bru) | POST | `{{checkout_url}}/intent` |
+| [06 CIT Unscheduled](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Checkout/00%20Runbook/02%20Payment%20Methods/06%20CIT%20Unscheduled.bru) | POST | `{{checkout_url}}/intent` |
+| [07 LPM](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Checkout/00%20Runbook/02%20Payment%20Methods/07%20LPM.bru) | POST | `{{checkout_url}}/intent` |
+| [08 Intent (Shipping Methods)](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Checkout/00%20Runbook/02%20Payment%20Methods/08%20Intent%20%28Shipping%20Methods%29.bru) | POST | `{{checkout_url}}/intent` |
+
+### [Checkout / 00 Runbook / 03 EU Local Payment Methods](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Checkout/00%20Runbook/03%20EU%20Local%20Payment%20Methods)
+
+| Request | Method | Endpoint |
+| --- | --- | --- |
+| [01 SEPA Create Profile](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Checkout/00%20Runbook/03%20EU%20Local%20Payment%20Methods/01%20SEPA%20Create%20Profile.bru) | POST | `{{checkout_url}}/intent` |
+
+### [Checkout / 00 Runbook / 04 Pay by Link](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Checkout/00%20Runbook/04%20Pay%20by%20Link)
+
+| Request | Method | Endpoint |
+| --- | --- | --- |
+| [01 Create Product](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Checkout/00%20Runbook/04%20Pay%20by%20Link/01%20Create%20Product.bru) | POST | `{{checkout_url_0}}/catalog/products/` |
+| [02 Create Payment Link](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Checkout/00%20Runbook/04%20Pay%20by%20Link/02%20Create%20Payment%20Link.bru) | POST | `{{checkout_url_0}}/payment-links/` |
+| [03 Create Payment Link LPM](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Checkout/00%20Runbook/04%20Pay%20by%20Link/03%20Create%20Payment%20Link%20LPM.bru) | POST | `{{checkout_url_0}}/payment-links/` |
+| [04 List Payment Links](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Checkout/00%20Runbook/04%20Pay%20by%20Link/04%20List%20Payment%20Links.bru) | GET | `{{checkout_url_0}}/payment-links/?page_size=10&page_token=&filter&order_by` |
+| [05 Get Payment Link](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Checkout/00%20Runbook/04%20Pay%20by%20Link/05%20Get%20Payment%20Link.bru) | GET | `{{checkout_url_0}}/payment-links/{{checkout_linkID}}` |
+| [06 Patch PBL](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Checkout/00%20Runbook/04%20Pay%20by%20Link/06%20Patch%20PBL.bru) | PATCH | `{{checkout_url_0}}/payment-links/{{checkout_linkID}}?status=LINK_STATUS_INACTIVE` |
+
+### [Checkout / 00 Runbook / 05 3DS Authentication](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Checkout/00%20Runbook/05%203DS%20Authentication)
+
+| Request | Method | Endpoint |
+| --- | --- | --- |
+| [01 3DS](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Checkout/00%20Runbook/05%203DS%20Authentication/01%203DS.bru) | POST | `{{checkout_url}}/intent` |
+
+### [Checkout / 00 Runbook / 06 Consumer Profile Management](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Checkout/00%20Runbook/06%20Consumer%20Profile%20Management)
+
+| Request | Method | Endpoint |
+| --- | --- | --- |
+| [01 Create Profile](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Checkout/00%20Runbook/06%20Consumer%20Profile%20Management/01%20Create%20Profile.bru) | POST | `{{checkout_url}}/intent` |
+| [02 Use Profile](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Checkout/00%20Runbook/06%20Consumer%20Profile%20Management/02%20Use%20Profile.bru) | POST | `{{checkout_url}}/intent` |
+
+### [Checkout / 00 Runbook / 07 Level 2 and Level 3 Data](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Checkout/00%20Runbook/07%20Level%202%20and%20Level%203%20Data)
+
+| Request | Method | Endpoint |
+| --- | --- | --- |
+| [01 Level 3 (Example 1)](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Checkout/00%20Runbook/07%20Level%202%20and%20Level%203%20Data/01%20Level%203%20%28Example%201%29.bru) | POST | `{{checkout_url}}/intent` |
+| [02 Level 3 (Example 2)](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Checkout/00%20Runbook/07%20Level%202%20and%20Level%203%20Data/02%20Level%203%20%28Example%202%29.bru) | POST | `{{checkout_url}}/intent` |
+| [03 Level 3 (Example 3)](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Checkout/00%20Runbook/07%20Level%202%20and%20Level%203%20Data/03%20Level%203%20%28Example%203%29.bru) | POST | `{{checkout_url}}/intent` |
+| [04 Level 3 (Example 4)](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Checkout/00%20Runbook/07%20Level%202%20and%20Level%203%20Data/04%20Level%203%20%28Example%204%29.bru) | POST | `{{checkout_url}}/intent` |
+
+### [Checkout / 00 Runbook / 08 Soft Merchant Descriptors](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Checkout/00%20Runbook/08%20Soft%20Merchant%20Descriptors)
+
+| Request | Method | Endpoint |
+| --- | --- | --- |
+| [01 Soft Merchant](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Checkout/00%20Runbook/08%20Soft%20Merchant%20Descriptors/01%20Soft%20Merchant.bru) | POST | `{{checkout_url}}/intent` |
+| [02 Sub Merchant](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Checkout/00%20Runbook/08%20Soft%20Merchant%20Descriptors/02%20Sub%20Merchant.bru) | POST | `{{checkout_url}}/intent` |
+
+### [Checkout / 00 Runbook / 09 Fraud Prevention](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Checkout/00%20Runbook/09%20Fraud%20Prevention)
+
+| Request | Method | Endpoint |
+| --- | --- | --- |
+| [01 Fraud Check](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Checkout/00%20Runbook/09%20Fraud%20Prevention/01%20Fraud%20Check.bru) | POST | `{{checkout_url}}/intent` |
+
+### [Checkout / 00 Runbook / 10 Notifications](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Checkout/00%20Runbook/10%20Notifications)
+
+| Request | Method | Endpoint |
+| --- | --- | --- |
+| [01 Checkout Notifications](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Checkout/00%20Runbook/10%20Notifications/01%20Checkout%20Notifications.bru) | GET | `{{checkout_url}}/notifications?merchantOrderNumber={{merchantOrderNumber}}&periodStart={{timebefore}}&periodEnd={{timenow}}` |
 
 ## Additional Documentation
 

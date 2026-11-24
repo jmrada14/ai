@@ -155,3 +155,5 @@ application-local.yml
 # CAT and PROD use different credentials, so per-environment .env files are likely.
 .env.*
 !.env.example
+
+.bruno-collection/

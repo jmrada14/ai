@@ -44,70 +44,11 @@ If 3DS is invoked inline as part of an Online Payments authorization, see `onlin
 ## Core endpoints
 
 - **`POST {{3ds_url}}/authentications`** — *Prepare*: submit card + amount + addresses → returns `authenticationId` + `transactionId`.
-- **`POST {{3ds_url}}/authentications/{authenticationId}`** — *Perform*: submit full risk / browser / account context → returns the 3DS result (frictionless cryptogram, or a challenge to render in the browser). Omit `threeDSRequestorAuthenticationInfo.threeDSChallengeType` and let the issuer decide; only set it deliberately (`"CHALLENGE_REQUESTED"` forces step-up, `"NO_CHALLENGE"` requests frictionless and should not be a default).
+- **`POST {{3ds_url}}/authentications/{authenticationId}`** — *Perform*: submit full risk / browser / account context → returns the 3DS result (frictionless cryptogram, or a challenge to render in the browser). The body is large — ~30 sub-objects covering account, prior authentication, purchase risk, browser and addresses. See the note below on letting the issuer choose the outcome.
 - **`GET  {{3ds_url}}/authentications/{authenticationId}`** — *Results*: read the final authentication outcome after a challenge completes. Response carries `authenticationResult.threeDomainSecureCompletion.threeDSAuthenticationValue` (CAVV) and `.electronicCommerceIndicator` (ECI) — the values you ultimately pass to Online Payments authorization. For a frictionless result these already come back on the Perform response; the GET is how you retrieve them once a challenge round-trip has finished.
 - **`GET  {{3ds_url}}/authentications/healthcheck`** — Health probe only. Returns service liveness; it does **not** carry a cryptogram.
 
 All requests need bearer auth, a UUID `request-id` header, and a `merchant-id` header.
-
-## Sample requests
-
-### Prepare — `POST {{3ds_url}}/authentications`
-
-```json
-{
-  "authenticationPaymentMethodType": {
-    "card": {
-      "accountNumber": "5424184049821670",
-      "expiry": { "month": 5, "year": 2027 }
-    }
-  },
-  "amount": 54500,
-  "currency": "EUR",
-  "authenticationAccount": {
-    "email": "shopper@example.com",
-    "firstName": "Jane", "lastName": "Doe",
-    "phone": { "countryCode": 1, "phoneNumber": "8137221122" },
-    "billingAddress": { "line1": "...", "city": "Clearwater", "state": "FL", "postalCode": "33607", "countryCode": "USA" }
-  },
-  "shippingAddress": { "line1": "...", "city": "...", "state": "FL", "postalCode": "33607", "countryCode": "USA" },
-  "threeDSMethodMerchantNotificationUrl": "https://merchant.example.com/3ds-method-callback",
-  "authenticationType": "AUTHENTICATION"
-}
-```
-
-Response captures: `transactionId`, `authenticationId` (treat as the case ID for the Perform call).
-
-### Perform — `POST {{3ds_url}}/authentications/{authenticationId}`
-
-Trimmed shape (full body has ~30 sub-objects covering account, prior auth, purchase risk, browser, addresses, message extensions):
-
-```json
-{
-  "accountType": "CREDIT",
-  "channelType": "BROWSER",
-  "messageType": "PAYMENT_AUTHENTICATION",
-  "threeDSChallengeMerchantNotificationUrl": "https://merchant.example.com/3ds-challenge-callback",
-  "authenticationSupportUrl": "https://merchant.example.com/3ds-support",
-  "threeDSRequestorAuthenticationInfo": {
-    "threeDSAuthenticationTimestamp": "2023-08-21T15:12:12Z",
-    "requestorAuthenticationMethod": "REQUESTOR_CRED",
-    "authenticationPurpose": "PAYMENT_TRANSACTION"
-  },
-  "threeDSPurchaseInfo": {
-    "purchaseDate": "2023-08-21T15:12:12Z",
-    "threeDomainSecureTransactionType": "CHECK"
-  },
-  "browserInfo": {
-    "deviceIPAddress": "192.168.1.11",
-    "browserLanguage": "en",
-    "browserUserAgent": "Mozilla/5.0 ...",
-    "javaScriptEnabled": true
-  },
-  "authenticationAccount": { "...same shape as Prepare..." },
-  "shippingAddress": { "...same shape as Prepare..." }
-}
-```
 
 **Let the issuer decide.** Omit `threeDSRequestorAuthenticationInfo.threeDSChallengeType` (as above) so the issuer's ACS chooses frictionless or challenge from the risk signals — this is the correct default for SCA. Only set it deliberately: `"CHALLENGE_REQUESTED"` forces a step-up, `"NO_CHALLENGE"` *requests* frictionless. Do **not** hard-code `"NO_CHALLENGE"` as a default: it silently asks the issuer to skip authentication and defeats the purpose of running 3DS. The issuer can override either hint (e.g. PSD2 mandates), so your app must handle both outcomes regardless of what it requested.
 
@@ -147,12 +88,15 @@ The ACS controls where the iframe navigates, so the SPA's `message` listener is 
 page the ACS (or anything else) can load into a frame. Treat it as an untrusted input channel:
 
 - **Send with an explicit target origin — never `"*"`.** On the callback page:
+
   ```js
   window.parent.postMessage({ type: "3ds-method-complete" }, "https://your-spa.example.com");
   ```
+
   Use a build-time constant for the SPA origin. `"*"` broadcasts to whatever ended up as the parent.
 - **Check `event.origin` in the listener, before anything else.** An unchecked listener lets any
   framed page forge a "challenge complete" message and advance your checkout:
+
   ```js
   window.addEventListener("message", (event) => {
     if (event.origin !== "https://your-spa.example.com") return;   // reject, don't process
@@ -160,6 +104,7 @@ page the ACS (or anything else) can load into a frame. Treat it as an untrusted 
     // ...then handle event.data
   });
   ```
+
 - **Carry no trust in the message payload.** The message is a *signal that a step finished*, not
   evidence that it succeeded. Never read a CAVV, ECI, or status out of `event.data` — always
   re-confirm server-side with `GET /authentications/{authenticationId}` and gate the authorization
@@ -184,7 +129,27 @@ Minimum smoke test:
 
 Then pass the resulting CAVV + ECI into an Online Payments authorization in CAT and confirm acceptance.
 
-## Common pitfalls
+## Sample Requests
+
+Use these sample requests to understand how to interact with the 3-D Secure API. When generating code use these examples as a reference.
+
+### [3-D Secure / Frictionless](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/3-D%20Secure/Frictionless)
+
+| Request | Method | Endpoint |
+| --- | --- | --- |
+| [Find an authentication request](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/3-D%20Secure/Frictionless/Find%20an%20authentication%20request.bru) | GET | `{{3ds_url}}/authentications/{{3dsauthid}}` |
+| [Perform a 3DS authentication - FRICTIONLESS](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/3-D%20Secure/Frictionless/Perform%20a%203DS%20authentication%20-%20FRICTIONLESS.bru) | POST | `{{3ds_url}}/authentications/{{3dsauthid}}` |
+| [Prepare a 3DS authentication](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/3-D%20Secure/Frictionless/Prepare%20a%203DS%20authentication.bru) | POST | `{{3ds_url}}/authentications` |
+
+### [3-D Secure / Challenge](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/3-D%20Secure/Challenge)
+
+| Request | Method | Endpoint |
+| --- | --- | --- |
+| [Find an authentication request](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/3-D%20Secure/Challenge/Find%20an%20authentication%20request.bru) | GET | `{{3ds_url}}/authentications/{{3dsauthid}}` |
+| [Perform a 3DS authentication - CHALLENGE](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/3-D%20Secure/Challenge/Perform%20a%203DS%20authentication%20-%20CHALLENGE.bru) | POST | `{{3ds_url}}/authentications/{{3dsauthid}}` |
+| [Prepare a 3DS authentication](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/3-D%20Secure/Challenge/Prepare%20a%203DS%20authentication.bru) | POST | `{{3ds_url}}/authentications` |
+
+## Common Pitfalls
 
 - Implementing 3DS as a pure backend Prepare→Perform loop — it skips the browser 3DS Method + challenge iframes, so it stalls on `425 / DATA_COLLECTION_IN_PROGRESS` and never authenticates a real challenge. Run the browser round-trip.
 - Hard-coding `threeDSChallengeType: "NO_CHALLENGE"` — silently defeats SCA. Omit it and let the issuer decide.

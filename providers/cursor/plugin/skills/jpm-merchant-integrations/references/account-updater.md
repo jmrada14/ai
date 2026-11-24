@@ -1,27 +1,32 @@
 # Account Updater
 
-> **Scaffold — endpoint details are placeholders.** Fill from `https://developer.payments.jpmorgan.com/` (Account Updater) before using in production.
+Keeps stored card credentials (PAN, expiry, account status) current so recurring and card-on-file payments don't fail on stale cards.
 
-## Overview
+## Docs
 
-Account Updater keeps stored card credentials current as issuers reissue, replace, or close cards. It returns updated PAN / expiry information so that recurring charges, subscriptions, and stored-credential MIT transactions don't fail on a stale card.
+Fetch only the page for the step you're on. If a doc and this file disagree, the doc wins.
 
-Use this when:
-- You store cards on file for recurring billing or one-click checkout.
-- You're seeing avoidable `expired_card` or `invalid_card_number` declines on returning customers.
-- You need to align stored credentials with the latest network state (Visa AU / Mastercard ABU).
+| When | Doc | Extract |
+| --- | --- | --- |
+| Once the mode is chosen | [Overview](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fdocs%2Fcommerce%2Foptimization-protection%2Fcapabilities%2Faccount-updater%2Foverview.md) | Region/card-brand availability, ineligible MCCs, Discover response timing |
+| Before writing the POST | [Request card account updates](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fdocs%2Fcommerce%2Foptimization-protection%2Fcapabilities%2Faccount-updater%2Fhow-to%2Frequest-card-account-updates.md) | Request body per intent, `reasonMessage` values and the recommended action for each |
+| Before writing the GET or webhook handler | [Retrieve latest card account updates](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fdocs%2Fcommerce%2Foptimization-protection%2Fcapabilities%2Faccount-updater%2Fhow-to%2Fget-latest-card-account-updates.md) | Accepted `account-identifier` values, response shape |
+| Wiring card registration | [Notification types](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fdocs%2Fcommerce%2Foptimization-protection%2Fcapabilities%2Fnotifications%2Fnotification-types.md) (Account updater events) | Event and subtype to subscribe to |
+| Field or schema questions | [API reference](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fapi%2Fcommerce%2Foptimization-protection%2Faccount-updater%2Faccount-updater-oas.md) | Field names, enums, constraints |
+| Handling errors | [Response codes](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fapi%2Fcommerce%2Foptimization-protection%2Faccount-updater%2Faccount-updater-response-codes.md) | HTTP status / `responseCode` handling |
+| Only if brand flips or `bypassBrandCheckIndicator` come up | [Brandflip](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fdocs%2Fcommerce%2Foptimization-protection%2Fcapabilities%2Faccount-updater%2Fbrandflip.md) | Brandflip and bypass behaviour |
+| CAT smoke test | [Testing](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fdocs%2Fcommerce%2Foptimization-protection%2Fcapabilities%2Faccount-updater%2Ftesting.md) | Scenario cards and expected `reasonMessage` |
 
 ## Modes
 
-Two integration shapes:
-- **Inquiry mode** — synchronous: pass a card, get the latest known state back.
-- **Card-registration mode** — async: register cards once, then receive `card.updated` webhook events as issuers push changes. **The webhook payload carries only *masked* card data** — to obtain the updated card details you must call the GET endpoint after each notification. This mode therefore requires **both** `jpm-notifications` (to receive events) **and** the Account Updater GET endpoint (to retrieve the full result). Wire up `jpm-notifications` first.
+- **Merchant-managed inquiry** — POST a card, read the result. Real-time for Visa and Mastercard; Discover returns an `expectedRecordUpdateTimestamp` and the result must be fetched later with GET.
+- **Card registration** — register cards once; JPM sends `accountUpdateNotification` webhooks (subtype `AccountUpdaterStatus`) when a card changes. Requires `jpm-notifications`.
 
 ## Prerequisites
 
 - Auth module + `getAccessToken()` already wired (see `../SKILL.md` Step 1).
-- A secure store for cards on file (PCI scope — use Tokenization if you can to avoid storing PANs directly; see `tokenization.md`).
-- **For card-registration mode only:** `jpm-notifications` skill applied, with a webhook endpoint hosted and signature verification working. You will also integrate the Account Updater **GET** endpoint — the notification payload is masked, so the GET call is how you retrieve the actual updated card details.
+- A secure store for cards on file (PCI scope — prefer Tokenization; see `tokenization.md`).
+- **Card registration only:** `jpm-notifications` applied, with a reachable webhook endpoint and signature verification working.
 
 ## Base URLs
 
@@ -30,108 +35,104 @@ Two integration shapes:
 | CAT | `https://api-ms-test.payments.jpmorgan.com/api/v1` | `JPM_ACCOUNT_UPDATER_URL` |
 | PROD | `https://api-ms.payments.jpmorgan.com/api/v1` | `JPM_ACCOUNT_UPDATER_URL` |
 
-Account Updater shares the host root with Online Payments / 3DS / Wallet Decryptions (Optimization & Protection family), but lives at the `v1` path prefix where they use `v2`. Use a dedicated env var so a future host split doesn't require a code change.
+## Endpoints
 
-## Core endpoints
+`POST /account-updates` — intent is set by `cardAccountAction`:
 
-All three card networks (Visa, Mastercard, Discover) share the same endpoint shape — the API routes by BIN, not by network in the URL.
+- omitted → one-time inquiry
+- `REGISTER` → subscribe the card for ongoing updates
+- `UNREGISTER` → stop updates
 
-- **`POST {{accountupdater_url}}/account-updates`** — submit one card. Body shape differs by intent:
-  - **One-time inquiry** — omit `cardAccountAction`. Returns current network state without registering for ongoing updates.
-  - **Register** — set `cardAccountAction: "REGISTER"` and include `merchantRecordIdentifier`. Subscribes the card for ongoing updates (delivered via `jpm-notifications`).
-  - **Unregister** — set `cardAccountAction: "UNREGISTER"`.
-- **`GET  {{accountupdater_url}}/account-updates/{requestId}`** — retrieve the result/status of a prior submission. The `requestId` comes from the response of the original POST.
-- **`GET  {{accountupdater_url}}/healthcheck/account-updates`** — service health probe.
-
-For card-registration mode, async updates arrive via the Notifications API under the `accountUpdateNotification` family (subscription type `AccountUpdaterStatus`). See `jpm-notifications` for wiring up the webhook receiver. **The notification payload only contains masked card information** — it signals *that* an update occurred but not the full updated PAN/expiry. To read the actual updated card details, call `GET /account-updates/{requestId}` after receiving the notification.
-
-Response capture pattern: every POST returns `requestId` + `responseId`. Save both — `requestId` is the lookup key for the GET call. In registration mode, persist `requestId` against your card-on-file record so you can call the GET endpoint when the matching `accountUpdateNotification` arrives.
-
-## Sample requests
-### Register a Visa card
-
-```json
-POST {{accountupdater_url}}/account-updates
-{
-  "accountInformation": {
-    "cardNumber": "4111111111111111",
-    "expiry": { "month": 9, "year": 2032 }
-  },
-  "cardAccountAction": "REGISTER",
-  "merchantRecordIdentifier": "<your-stable-card-record-id>"
-}
-```
-
-### Unregister (Visa)
-
-```json
-POST {{accountupdater_url}}/account-updates
-{
-  "accountInformation": {
-    "cardNumber": "4111111111111119",
-    "expiry": { "month": 9, "year": 2032 }
-  },
-  "cardAccountAction": "UNREGISTER"
-}
-```
-
-### One-time inquiry (Discover) — note: no `cardAccountAction` field
-
-```json
-POST {{accountupdater_url}}/account-updates
-{
-  "accountInformation": {
-    "cardNumber": "6011111111111111",
-    "expiry": { "month": 8, "year": 2026 }
-  }
-}
-```
-
-### Retrieve result by request ID
-
-```
-GET {{accountupdater_url}}/account-updates/{requestId}
-```
-
-No body. The `{requestId}` was returned by the original POST.
-
-### Test card BINs by network
-
-| Network | Card prefix | Example test card |
-|---------|-------------|-------------------|
-| Visa | 4xxx | `4111111111111111` |
-| Mastercard | 5xxx | `5111111111111113` |
-| Discover | 6xxx | `6011111111111111` |
+`GET /account-updates/{account-identifier}` — accepts the `requestId` or `responseId` from a prior POST, or the `transactionId` from an Account Updater webhook.
 
 ## Reference flow
 
-### One-time inquiry mode (sync)
-1. Run on a schedule (daily batch) against cards-on-file.
-2. For each card, POST to `/account-updates` **without** `cardAccountAction`.
-3. Capture `requestId` from the response.
-4. Optionally GET `/account-updates/{requestId}` to retrieve a richer view of the result.
-5. Update your store on `match-update`; mark dead on `match-closed`.
+### Merchant-managed inquiry
 
-### Card-registration mode (async)
+1. Before writing the body, fetch the Request doc and the closest One Time Inquiry `.bru` below.
+2. POST each card without `cardAccountAction`; persist `requestId` and `responseId`.
+3. If the response carries `expectedRecordUpdateTimestamp` (e.g. Discover), GET the result after that time.
+4. Act on `reasonMessage` per the Request doc's recommended-action table. Do not infer outcomes from undocumented values.
 
-Registration mode has **three integration points** — all three are required for the flow to work end to end:
+### Card registration
 
-**Step 1 — Subscribe to Account Updater events (Notifications API).** Wire up `jpm-notifications` so your webhook endpoint receives `accountUpdateNotification` events (subscription type `AccountUpdaterStatus`). This is the async delivery channel for issuer-pushed changes.
-
-**Step 2 — Register cards (POST endpoint).** On card-on-file creation, POST to `/account-updates` with `cardAccountAction: "REGISTER"` and a stable `merchantRecordIdentifier` so you can correlate webhook events back to your customer. Persist the returned `requestId` against that card record. On card removal, POST again with `cardAccountAction: "UNREGISTER"`.
-
-**Step 3 — Retrieve updated card details (GET endpoint).** When an `accountUpdateNotification` arrives, **it carries only masked card information** — it tells you *an update happened* but not the new PAN/expiry. Call `GET /account-updates/{requestId}` (using the `requestId` you persisted in Step 2, or the one referenced in the notification) to fetch the full updated card details, then update your card-on-file store. **Skipping this step means you never actually receive the updated card data — the notification alone is not enough.**
+1. Subscribe to Account Updater events via `jpm-notifications`.
+2. On card-on-file creation, POST with `cardAccountAction: "REGISTER"` (mirror the Register `.bru`); persist `requestId` against the card record. On card removal, POST with `UNREGISTER`.
+3. On each `accountUpdateNotification`, call `GET /account-updates/{transactionId}` with the notification's `transactionId` and update the stored card from `newAccountInformation`.
 
 ## CAT smoke test
 
-Test cards above (Visa `4111111111111111`, Mastercard `5111111111111113`, Discover `6011111111111111`) are the BIN-level smoke set. JPM's portal publishes additional scenario cards under the Account Updater testing page — cross-reference for cards that deterministically return `match-update`, `match-closed`, `contact-cardholder`, and `no-match`.
+- **Inquiry:** POST cards from the Testing page and confirm each returns its documented `reasonMessage`.
+- **Registration:** (1) confirm the webhook is subscribed and reachable, (2) REGISTER a Testing-page card and confirm an `accountUpdateNotification` arrives, (3) GET with its `transactionId` and confirm the full updated card details are returned.
 
-For registration mode, exercise all three steps in CAT before flipping PROD: (1) confirm your webhook endpoint is subscribed and reachable, (2) register a CAT card via `POST /account-updates` with `cardAccountAction: "REGISTER"` and confirm the corresponding `accountUpdateNotification` lands on your CAT webhook endpoint, then (3) call `GET /account-updates/{requestId}` and confirm you get back the full (unmasked) updated card details — not just the masked payload from the notification.
+## Sample Requests
 
-## Common pitfalls
+Use these sample requests to understand how to interact with the Account Updater API. When generating code use these examples as a reference.
 
-- Treating `no-match` as "card is fine" — it just means no update was pushed this cycle. Don't reset the card's "last verified" timestamp on `no-match`.
-- Running inquiry mode too frequently — networks rate-limit and may charge per inquiry. Daily batches are usually enough.
-- Forgetting to wire `jpm-notifications` before registration mode → events silently dropped.
-- **Treating the notification payload as the source of updated card data.** It's masked — it only signals that an update occurred. You must call `GET /account-updates/{requestId}` to retrieve the actual updated PAN/expiry. Registration mode without the GET step is incomplete.
-- Not persisting `requestId` at registration time → no lookup key to call the GET endpoint when the notification arrives.
+Every scenario folder below holds the same requests, so they are listed once rather than repeated per folder — open a scenario to run them against a card that forces that outcome. `{{…}}` stands for the lookup variable each scenario names for itself. Scenario names are the collection's own labels.
+
+### Requests in each scenario folder
+
+| Request | Method | Endpoint |
+| --- | --- | --- |
+| One Time Inquiry - Get by request Id | GET | `{{accountupdater_url}}/account-updates/{{…}}` |
+| One Time Inquiry - Get by response Id | GET | `{{accountupdater_url}}/account-updates/{{…}}` |
+| One Time Inquiry | POST | `{{accountupdater_url}}/account-updates` |
+| Register - Get by request Id | GET | `{{accountupdater_url}}/account-updates/{{…}}` |
+| Register - Get by response Id | GET | `{{accountupdater_url}}/account-updates/{{…}}` |
+| Register | POST | `{{accountupdater_url}}/account-updates` |
+| Un Register - Get by request Id | GET | `{{accountupdater_url}}/account-updates/{{…}}` |
+| Un Register - Get by response Id | GET | `{{accountupdater_url}}/account-updates/{{…}}` |
+| Un Register | POST | `{{accountupdater_url}}/account-updates` |
+
+### [Account Updater](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Account%20Updater)
+
+| Request | Method | Endpoint |
+| --- | --- | --- |
+| [Health check for the Account Updater service](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Account%20Updater/Health%20check%20for%20the%20Account%20Updater%20service.bru) | GET | `{{accountupdater_url}}/healthcheck/account-updates` |
+
+### [Account Updater / Discover](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Account%20Updater/Discover)
+
+| Scenario | Requests |
+| --- | --- |
+| [CLOSED_ACCOUNT](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Account%20Updater/Discover/CLOSED_ACCOUNT) | 9 |
+| [CONTACT_CARDHOLDER](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Account%20Updater/Discover/CONTACT_CARDHOLDER) | 9 |
+| [MATCH_NO_UPDATE](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Account%20Updater/Discover/MATCH_NO_UPDATE) | 9 |
+| [NEW_ACCOUNT](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Account%20Updater/Discover/NEW_ACCOUNT) | 9 |
+| [NEW_ACCOUNT_AND_EXPIRY](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Account%20Updater/Discover/NEW_ACCOUNT_AND_EXPIRY) | 9 |
+| [NEW_ACCOUNT_AND_EXPIRY_OVERRIDE](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Account%20Updater/Discover/NEW_ACCOUNT_AND_EXPIRY_OVERRIDE) | 9 |
+| [NEW_EXPIRY](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Account%20Updater/Discover/NEW_EXPIRY) | 9 |
+| [NEW_EXPIRY_OVERRIDE](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Account%20Updater/Discover/NEW_EXPIRY_OVERRIDE) | 9 |
+
+### [Account Updater / Mastercard](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Account%20Updater/Mastercard)
+
+| Scenario | Requests |
+| --- | --- |
+| [CONTACT_CARDHOLDER](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Account%20Updater/Mastercard/CONTACT_CARDHOLDER) | 9 |
+| [MATCH_NO_UPDATE](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Account%20Updater/Mastercard/MATCH_NO_UPDATE) | 9 |
+| [NEW_ACCOUNT_AND_EXPIRY](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Account%20Updater/Mastercard/NEW_ACCOUNT_AND_EXPIRY) | 9 |
+| [NEW_ACCOUNT_SAFETECH_TOKEN](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Account%20Updater/Mastercard/NEW_ACCOUNT_SAFETECH_TOKEN) | 3 |
+| [NEW_EXPIRY](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Account%20Updater/Mastercard/NEW_EXPIRY) | 9 |
+| [NO_MATCH_NON_PARTICIPATING_BIN](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Account%20Updater/Mastercard/NO_MATCH_NON_PARTICIPATING_BIN) | 9 |
+| [NO_MATCH_PARTICIPATING_BIN](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Account%20Updater/Mastercard/NO_MATCH_PARTICIPATING_BIN) | 9 |
+
+### [Account Updater / Visa](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Account%20Updater/Visa)
+
+| Scenario | Requests |
+| --- | --- |
+| [BRAND_FLIP](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Account%20Updater/Visa/BRAND_FLIP) | 9 |
+| [CLOSED_ACCOUNT](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Account%20Updater/Visa/CLOSED_ACCOUNT) | 9 |
+| [CONTACT_CARDHOLDER](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Account%20Updater/Visa/CONTACT_CARDHOLDER) | 9 |
+| [MATCH_NO_UPDATE](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Account%20Updater/Visa/MATCH_NO_UPDATE) | 9 |
+| [NEW_ACCOUNT](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Account%20Updater/Visa/NEW_ACCOUNT) | 9 |
+| [NEW_ACCOUNT_AND_EXPIRY](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Account%20Updater/Visa/NEW_ACCOUNT_AND_EXPIRY) | 9 |
+| [NEW_EXPIRY](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Account%20Updater/Visa/NEW_EXPIRY) | 9 |
+| [NO_MATCH_NON_PARTICIPATING_BIN](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Account%20Updater/Visa/NO_MATCH_NON_PARTICIPATING_BIN) | 9 |
+| [NO_MATCH_PARTICIPATING_BIN](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Account%20Updater/Visa/NO_MATCH_PARTICIPATING_BIN) | 9 |
+| [PAN_OPT_OUT](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Account%20Updater/Visa/PAN_OPT_OUT) | 9 |
+| [STOP_ADVICE_ON_MERCHANT](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Account%20Updater/Visa/STOP_ADVICE_ON_MERCHANT) | 9 |
+
+## Common Pitfalls
+
+- **The registration webhook is not the source of updated card data.** Its card details are masked; always follow it with the GET in step 3. (Not yet documented on the portal — remove once published.)
+- Registering cards before `jpm-notifications` is wired → updates are never received.

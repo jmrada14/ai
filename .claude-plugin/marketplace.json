@@ -8,7 +8,7 @@
       "name": "jpm-payments-skills",
       "source": "./providers/claude/plugin/",
       "description": "J.P. Morgan Payments — All Skills",
-      "version": "2.1.0",
+      "version": "2.1.1",
       "author": {
         "name": "J.P. Morgan Payments"
       }

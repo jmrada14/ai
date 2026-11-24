@@ -184,7 +184,7 @@ Per-event payload schemas live in the Notifications OAS on the portal (reference
 6. Re-deliver the same event manually (or wait for a JPM retry) and confirm de-duplication by `notificationId` skips processing the second time.
 7. If `mTLSEnabled: true`, confirm the JPM client cert validates against the CA chain provided by your RM.
 
-## Common pitfalls
+## Common Pitfalls
 
 - **Wrong signature header.** It's `Signature` (with companion `Key-ID` and `Signing-Algorithm`). Not `X-Jpm-Signature` or anything custom.
 - **Verifying against re-serialized JSON instead of raw bytes** — the #1 cause of failed verifications.

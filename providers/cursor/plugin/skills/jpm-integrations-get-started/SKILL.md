@@ -2,7 +2,7 @@
 name: jpm-integrations-get-started
 description: Triage and credential intake for merchants starting with J.P. Morgan Payments APIs. Use this skill when the user wants to migrate from another payment provider to JPM or start a new JPM integration from scratch. Sets up a .env file (generated fresh or updated in place) with the clientId, certificate path, and private key path that downstream skills will read at runtime. Does not persist credential contents.
 metadata:
-  version: 2.0.0
+  version: 2.0.1
   lob: commerce
 ---
 
@@ -27,25 +27,26 @@ If **No**, exit this skill.
 
 ## Domain access check (show after the disclaimer, before Step 1)
 
-This skill and the skills it hands off to reach out to a J.P. Morgan host to fetch documentation, so confirm your environment (corporate proxy, firewall, or network policy) isn't blocking it before starting — otherwise the skill fails partway through.
+This skill and the skills it hands off to reach out to a J.P. Morgan host to fetch documentation and to GitHub to fetch sample requests, so confirm your environment (corporate proxy, firewall, or network policy) isn't blocking them before starting — otherwise the skill fails partway through.
 
-> **This skill uses the following domain.** Please make sure it is not blocked by your network, proxy, or firewall before proceeding:
+> **This skill uses the following domains.** Please make sure they are not blocked by your network, proxy, or firewall before proceeding:
 >
 > - `developer.payments.jpmorgan.com` — documentation and reference content
+> - `github.com` — sample API requests (`jpmorgan-payments/api-collections`)
 
 Ask:
-- Question: "Before starting, we need to confirm the domain listed above is reachable from this environment. How would you like to proceed?"
+- Question: "Before starting, we need to confirm the domains listed above are reachable from this environment. How would you like to proceed?"
 - Header: "Domain access"
 - Options:
-  - "Yes — proceed" — I've confirmed that this domain is not blocked; continue with the intake
-  - "Run a test to check for access" — check the domain now and report whether it is reachable before continuing
-  - "No — exit" — the domain is blocked; stop so I can get it allowlisted first
+  - "Yes — proceed" — I've confirmed that these domains are not blocked; continue with the intake
+  - "Run a test to check for access" — check each domain now and report whether it is reachable before continuing
+  - "No — exit" — a domain is blocked; stop so I can get it allowlisted first
 
 Handle the answer:
 
 - **Yes — proceed:** continue to Step 1.
-- **No — exit:** tell the user to allowlist the domain with their network/security team, then exit this skill.
-- **Run a test to check for access:** send an `HTTPS HEAD`/`GET` to `https://<domain>/`. Any HTTP response — including `401`/`403`/`404` — counts as **reachable**, so continue to Step 1. DNS failures, timeouts, connection refused, and TLS/proxy interception count as **blocked**; say so, then either offer a fix you know (proxy allowlist entry, `NO_PROXY`/`HTTP_PROXY`, or trust-store adjustment) and re-ask so they can re-test, or ask them to allowlist the domain and exit so they can re-run.
+- **No — exit:** tell the user to allowlist the domains above with their network/security team, then exit this skill.
+- **Run a test to check for access:** send an `HTTPS HEAD`/`GET` to `https://<domain>/` for each domain. Any HTTP response — including `401`/`403`/`404` — counts as **reachable**; continue to Step 1 once every domain is reachable. DNS failures, timeouts, connection refused, and TLS/proxy interception count as **blocked**; say which domain is blocked, then either offer a fix you know (proxy allowlist entry, `NO_PROXY`/`HTTP_PROXY`, or trust-store adjustment) and re-ask so they can re-test, or ask them to allowlist the blocked domain and exit so they can re-run.
 
 ## Step 1 — Triage intent
 

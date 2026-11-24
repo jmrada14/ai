@@ -1,214 +1,134 @@
 # Tokenization
 
-> **Scaffold — endpoint details are placeholders.** Fill from `https://developer.payments.jpmorgan.com/` (Tokenization) before using in production.
+The Tokenization API replaces sensitive card data with a token that retains the essential information without compromising security. Use it to provision network tokens or Safetech (acquirer) tokens one card at a time or in bulk, request cryptograms for network-token payments, and manage each token's lifecycle.
 
-## Overview
+For additional information, refer to the [Tokenization API documentation](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fdocs%2Fcommerce%2Foptimization-protection%2Fcapabilities%2Ftokenization%2Foverview.md)
 
-Tokenization swaps a card PAN for a merchant-scoped token. The token can be used in subsequent Online Payments calls in place of the PAN — reducing PCI scope and letting the merchant store the token instead of card data.
+## When to Use
 
-Use this when:
-- You want to reduce PCI scope (CDE shrinkage from SAQ-D to SAQ-A-EP territory).
-- You don't need the broader profile model from Consumer Profile Management — just card → token.
-- You're migrating an existing card vault and need bulk tokenization, not just one-at-a-time API calls.
+- Keep cards on file as network tokens (Visa, Mastercard, American Express), which work with any payment provider, for stored-credential, subscription, and recurring payments
+- Replace stored card numbers with Safetech tokens — acquirer tokens usable only with J.P. Morgan, available in the US and Canada
+- Migrate an existing card vault in bulk, by API upload or, for large files, through Managed File Transfer Services (MFTS)
+- Keep stored tokens usable by managing their lifecycle state and acting on issuer updates
 
-## Modes
+Provisioning a token sends the raw card number, so your server handles the PAN. If card numbers must never reach your servers, tokenize through Checkout instead (see `checkout.md`).
 
-- **Online (API)** — one-at-a-time card→token swap via REST. Fits checkout flows.
-- **Bulk (MFTS)** — file-based: upload an encrypted card file via Managed File Transfer Services, receive a token file back. Fits migrations and large batch jobs. **Requires bulk encryption keys and an MFTS account in addition to OAuth.**
+## Authentication
 
-## Prerequisites
-
-- Auth module + `getAccessToken()` already wired (see `../SKILL.md` Step 1).
-- For online mode: nothing else.
-- **For bulk mode:** MFTS file transfer account, bulk encryption keys provisioned by JPM, and a secure environment to encrypt the card file before upload.
+Authentication is handled by the merchant's auth module (set up via the `jpm-oauth` skill). Import `getAccessToken` (or your language's equivalent) from that module and use it as `Authorization: Bearer <token>` on every Tokenization API call. Do **not** reimplement OAuth here — the auth module already caches tokens correctly per JPM guidance.
 
 ## Base URLs
 
 | Env | URL | Env var |
 |-----|-----|---------|
 | CAT | `https://api-tokens-cat.payments.jpmorgan.com` | `JPM_TOKENIZATION_URL` |
-| PROD | `https://api.merchant.jpmorgan.com/payments/v1` | `JPM_TOKENIZATION_URL` |
+| PROD | `https://api-tokens.payments.jpmorgan.com` | `JPM_TOKENIZATION_URL` |
 
-The portal also documents `https://api-test.merchant.jpmorgan.com/payments/v1` as a CAT/test host — likely a tenant-specific or alternate stack. Use whichever the merchant's RM directs them to; default to the value above.
+Tokenization doesn't share the `api-ms` host root used by Online Payments, 3DS, and Account Updater, and its paths sit directly on the host with no version prefix (`{JPM_TOKENIZATION_URL}/tokens`). If the merchant's RM provides a different Tokenization host, use that.
 
-MFTS hostnames (for bulk mode) are **not published on the portal** — they're provisioned per-merchant by the relationship manager during MFTS onboarding. See the bulk mode section below.
+## Integration Notes
 
-Async events for tokens (state changes, card details updates, bulk-update completions) arrive via the Notifications API under the `tokenLifecycleNotification` family — see `jpm-notifications`.
+- **Onboarding before code.** Network tokenization needs a token requestor ID (TRID) from the card networks, linked to your merchant ID by your J.P. Morgan implementation specialist. Safetech tokenization and MFTS are enabled through your relationship manager.
+- **What to store and send.** Store `tokenReferenceIdentifier` for a network token (the lifecycle, details, and cryptogram calls use it), or `acquirerTokenNumber` and the card expiry for a Safetech token. Online Payments takes the token itself, not `tokenReferenceIdentifier`:
+  - Network token — the cryptogram response's `tokenNumber` and `expiry` go in `paymentMethodType.card.accountNumber` and `expiry` with `accountNumberType: NETWORK_TOKEN`; its `electronicCommerceIndicator` and `tokenAuthenticationValue` go in `card.authentication`.
+  - Safetech token — `acquirerTokenNumber` goes in `card.accountNumber` with `accountNumberType: SAFETECH_TOKEN`, alongside the stored expiry.
+  - Samples: the "Network & Device Tokens" and "00 Runbook / 14 Tokenization" groups in `online-payments.md`.
+- **Lifecycle notifications.** Token state changes, card-detail updates, and bulk-file status arrive as `tokenLifecycleNotification` events — wire the receiver with the `jpm-notifications` skill. A `CardDetailsUpdate` event doesn't include the new details; follow it with `GET /tokens/{tokenReferenceIdentifier}/details`.
+- **CAT smoke test.** With a card from the Testing page: provision a network token, request a cryptogram, authorize a payment with it through Online Payments, then set it to `DELETE` with the lifecycle `PATCH`. For bulk, upload a one-record `PAN2NWT` file containing your TRID.
 
-## Core endpoints
+## How Tokenization works
 
-Bearer auth + UUID `request-id` + `merchant-id` headers across all endpoints.
+``` mermaid
+flowchart LR
+    subgraph Merchant["🏪 Merchant"]
+    end
 
-### Token creation — two distinct flows
+    subgraph JPM["J.P.Morgan\nCommerce Platform"]
+        API["Tokenization API"]
+        OLP["Online Payments API"]
+        NAPI["Notifications API"]
+        API -.-> NAPI
+    end
 
-- **`POST {{token_url}}/tokens`** — *Network token* creation. Full body: card details + device fingerprinting + risk signals + presentation mode. Use for ECOM where you have device/risk context and want issuer-level network tokenization with rich approval workflows.
-- **`POST {{token_url}}/acquirerToken`** — *Safetech (acquirer) token* creation. Minimal body — card only. Use when you don't have device/risk context (back-office, file imports) or you just need an acquirer-side token, not a network token. **Different response shape:** acquirer tokens return `tokenInformation.acquirerTokenNumber` instead of `tokenInformation.tokenNumber`.
+    subgraph NET["💳 Card networks"]
+    end
 
-### Token retrieval
+    Merchant -- "1 · Tokenize card" --> API
+    Merchant -- "2 · Request cryptogram (network tokens)" --> API
+    Merchant -- "3 · Pay with token" --> OLP
+    API <-.-> NET
+    OLP <-.-> NET
+    NAPI -. "Token lifecycle events" .-> Merchant
 
-- **`GET {{token_url}}/tokens/{tokenReferenceIdentifier}`** — token info / current state.
-- **`GET {{token_url}}/tokens/{tokenReferenceIdentifier}/details`** — detailed metadata (scheme, masked card, expiry).
-- **`GET {{token_url}}/tokens/{tokenReferenceIdentifier}/assets/{assetReferenceIdentifier}`** — fetch token-bound assets (logos, compliance metadata).
-- **`GET {{token_url}}/tokens/{tokenReferenceIdentifier}/lifecycle-states`** — current and historical lifecycle state.
-
-### Lifecycle + usage
-
-- **`PATCH {{token_url}}/tokens/{tokenReferenceIdentifier}/lifecycle-states`** — change state (activate / suspend / delete) with a reason.
-- **`POST  {{token_url}}/cryptograms`** — generate a fresh cryptogram (DTVV) from a stored token for use in authorization.
-
-### Health
-
-- **`GET {{token_url}}/healthcheck`**
-
-### Bulk mode (MFTS)
-
-File-based, not a single REST call. Combines two REST endpoints (for key exchange) with an SFTP transfer (for the file itself).
-
-**REST endpoints for key exchange:**
-- **`GET  {{token_url}}/bulk-tokens/encryption-key`** — returns JPM's PGP public key (`firmPublicKeyText`) used by the merchant to encrypt the outbound card file.
-- **`POST {{token_url}}/bulk-tokens/encryption-key`** — register the merchant's own PGP public key so JPM can encrypt the response token file before delivery.
-
-**File transfer (MFTS):** SFTP hosts and credentials are provisioned per merchant by the JPM relationship manager during MFTS onboarding — not on the portal. The merchant receives an inbound folder (upload path) and outbound folder (download path).
-
-**File format:**
-- Encoding: CSV (comma-separated), GPG-encrypted, extension `.csv.gpg`.
-- Filename convention:
-  - Request: `MerchantId-MerchantFileIdentifier-YYYYMMDD.csv.gpg`
-  - Response: `MerchantId-MerchantFileIdentifier-YYYYMMDD_<S|D>.csv.gpg` (`S` = standard, `D` = detail)
-- Record structure: three row types keyed by the first field.
-  - **Header (`0`)** — fields: `Indicator=0`, `MerchantId` (12), `Date` (YYYYMMDD), `ResponseFileType` (`S` or `D`), `RequestType` (e.g. `PAN2NWT`).
-  - **Detail (`1`)** — 10 fields, including `Indicator=1`, PAN (16), expiry (MMYY), `presentationModes` (e.g. `ECOM`), telephone, email, IP, `accountholderRefId` (max 24 for Visa), `submerchantId`, `tokenRequestorId` (36).
-  - **Trailer (`9`)** — fields: `Indicator=9`, `RecordCount` (8 digits).
-- Encoding & line endings: portal does not state explicitly. Assume UTF-8 / Unix LF unless told otherwise.
-- Size limits: REST bulk mode caps at ~6 MB / ~32k records per call. MFTS supports up to ~1 GB / ~1M records per file.
-
-## Sample requests
-
-### Create a network token (rich context)
-
-Trimmed shape (the full body has ~85 lines including device geolocation, risk history, and presentation modes):
-
-```json
-POST {{token_url}}/tokens
-{
-  "accountInformation": {
-    "cardNumber": "4111111111111111",
-    "cardExpiry": { "month": 12, "year": 2027 },
-    "cardVerificationNumber": "123",
-    "billingAddress": { "...": "..." }
-  },
-  "device": {
-    "deviceType": "MOBILE",
-    "deviceIP": "192.168.1.11",
-    "locale": "en-US",
-    "operatingSystem": "iOS"
-  },
-  "riskInformation": {
-    "walletRiskScore": "...",
-    "cardRiskScore": "...",
-    "deviceRiskScore": "..."
-  },
-  "presentationModes": ["ECOM"],
-  "recommendationPath": "APPROVED"
-}
+    style Merchant fill:#fff,stroke:#1a7a8a,color:#000
+    style JPM fill:#1a7a8a,stroke:#1a7a8a,color:#fff
+    style API fill:#d4f0f0,stroke:#1a7a8a,color:#000
+    style OLP fill:#fff,stroke:#1a7a8a,color:#000
+    style NAPI fill:#fff,stroke:#1a7a8a,color:#000
+    style NET fill:#fff,stroke:#1a7a8a,color:#000
 ```
 
-Response captures: `tokenInformation.tokenNumber`, `tokenInformation.tokenReferenceIdentifier`.
+[How it works: Tokenization API](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fdocs%2Fcommerce%2Foptimization-protection%2Fcapabilities%2Ftokenization%2Foverview.md)
 
-### Create a Safetech (acquirer) token — minimal
+## Relevant Documentation
 
-```json
-POST {{token_url}}/acquirerToken
-{
-  "accountInformation": {
-    "cardNumber": "379296848452209002",
-    "cardSource": "KEY_ENTERED"
-  }
-}
-```
+#### Optimization & Protection
 
-Response captures: `tokenInformation.acquirerTokenNumber`, `identifier` (use as `tokenReferenceIdentifier` for subsequent calls).
+- [Getting started](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fdocs%2Fcommerce%2Foptimization-protection%2Fgetting-started.md) Developer account, workspace project, and how test and production credentials are issued.
+- [Core concepts](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fdocs%2Fcommerce%2Foptimization-protection%2Fcore-concepts.md) Environments, synchronous acknowledgements, and asynchronous notifications.
+- [Support](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fdocs%2Fcommerce%2Foptimization-protection%2Fsupport.md) What to include when you contact your integration specialist.
 
-### Request a cryptogram for a stored token (use at authorization time)
+##### Tokenization
 
-```json
-POST {{token_url}}/cryptograms
-{
-  "paymentOrder": {
-    "amounts": { "amount": 1234, "currency": "USD" },
-    "device": { "deviceType": "DESKTOP", "deviceIP": "...", "locale": "en-US" },
-    "initiatedBy": "CARDHOLDER",
-    "transactionType": "ECOMMERCE"
-  },
-  "paymentInstrument": {
-    "accountholderName": "Jane Doe",
-    "tokenReferenceIdentifier": "{tokenReferenceIdentifier}",
-    "tokenNumber": "{tokenNumber}",
-    "electronicCommerceIndicator": "02",
-    "expiry": { "month": 12, "year": 2027 }
-  },
-  "tokenCryptogramType": "DTVV"
-}
-```
+- [Tokenization](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fdocs%2Fcommerce%2Foptimization-protection%2Fcapabilities%2Ftokenization%2Foverview.md) Regional availability by tokenization type and the overall integration steps.
+- [Network tokenization](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fdocs%2Fcommerce%2Foptimization-protection%2Fcapabilities%2Ftokenization%2Fnetwork-tokenization.md) TRID prerequisite, required fields by card brand, approval statuses, when a cryptogram is required, and 3-D Secure.
+- [Safetech tokenization](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fdocs%2Fcommerce%2Foptimization-protection%2Fcapabilities%2Ftokenization%2Fsafetech-tokenization.md) How acquirer tokens work, paying with one, and the SST2 token formats.
+- [Bulk tokenization](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fdocs%2Fcommerce%2Foptimization-protection%2Fcapabilities%2Ftokenization%2Fbulk-tokenization.md) API vs. MFTS delivery, size limits, encryption, file naming, and record layouts for PAN2NWT, PAN2SFT, and SFT2NWT.
+- [Token lifecycle management](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fdocs%2Fcommerce%2Foptimization-protection%2Fcapabilities%2Ftokenization%2Ftoken-lifecycle-management.md) Token states and their processing rules, `tokenLifecycleNotification` sub-types, and the card-details update flow.
+- [Testing](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fdocs%2Fcommerce%2Foptimization-protection%2Fcapabilities%2Ftokenization%2Ftesting.md) Test cards and the trigger values that force each endpoint's outcomes, including bulk files.
 
-Response captures: `transactionId`, `paymentInstrument.tokenAuthenticationValue` (the cryptogram to pass to Online Payments), `paymentInstrument.tokenNumber`.
+###### How To
 
-### Change lifecycle state (delete shown)
+- [Request a token](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fdocs%2Fcommerce%2Foptimization-protection%2Fcapabilities%2Ftokenization%2Fhow-to%2Frequest-a-token.md) Network and Safetech provisioning, plus token information, details, and asset lookups.
+- [Request a cryptogram](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fdocs%2Fcommerce%2Foptimization-protection%2Fcapabilities%2Ftokenization%2Fhow-to%2Frequest-a-cryptogram.md) Required fields by card brand, the single-use rule, and token updates returned in the response.
+- [Manage token state change](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fdocs%2Fcommerce%2Foptimization-protection%2Fcapabilities%2Ftokenization%2Fhow-to%2Fmanage-token-state-change.md) Retrieve and update a token's state.
+- [Manage bulk tokens](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fdocs%2Fcommerce%2Foptimization-protection%2Fcapabilities%2Ftokenization%2Fhow-to%2Fmanage-bulk-tokens.md) Upload a bulk file by API, check its status, and download the response.
+- [Manage bulk keys](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fdocs%2Fcommerce%2Foptimization-protection%2Fcapabilities%2Ftokenization%2Fhow-to%2Fmanage-bulk-keys.md) MFTS onboarding and the PGP key exchange for bulk files.
 
-```json
-PATCH {{token_url}}/tokens/{tokenReferenceIdentifier}/lifecycle-states
-{
-  "paymentInstrument": {
-    "lifecycleManagementAction": {
-      "stateChangeReason": "DELETE",
-      "stateChangeReasonText": "Consumer suspended subscription"
-    }
-  }
-}
-```
+###### API reference
 
-Other `stateChangeReason` values follow the same shape: typically `ACTIVATE`, `SUSPEND`, `DELETE`.
+- [Tokenization API](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fapi%2Fcommerce%2Foptimization-protection%2Ftokenization%2Ftokenization-oas.md) OpenAPI specification: servers, endpoints, headers, and schemas.
+- [Tokenization response codes](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fapi%2Fcommerce%2Foptimization-protection%2Ftokenization%2Fresponse-codes.md) `responseStatus`, `responseCode`, and `responseMessage` values by HTTP status.
+- [Tokenization changelog](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fapi%2Fcommerce%2Foptimization-protection%2Ftokenization%2Fchangelog.md) API version history, including URL, path, and header changes.
 
-### Get token info / lifecycle / assets
+#### Online Payments
 
-```
-GET {{token_url}}/tokens/{tokenReferenceIdentifier}
-GET {{token_url}}/tokens/{tokenReferenceIdentifier}/details
-GET {{token_url}}/tokens/{tokenReferenceIdentifier}/lifecycle-states
-GET {{token_url}}/tokens/{tokenReferenceIdentifier}/assets/{assetReferenceIdentifier}
-```
+- [Tokenization](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fdocs%2Fcommerce%2Fonline-payments%2Fcapabilities%2Fonline-payments%2Fpayment-enhancements%2Ftokenization.md) Sending network tokens, cryptograms, and Safetech tokens in Online Payments requests.
+- [Tokenization of payment data](https://developer.payments.jpmorgan.com/api/llm-content?path=en%2Fdocs%2Fcommerce%2Fonline-payments%2Fcapabilities%2Fcheckout%2Ftokenization-of-payment-data.md) Getting tokens from Checkout without handling the card number.
 
-No body on any of these.
+---
 
-## Reference flow
+## Sample Requests
 
-### Online (network token)
-1. Collect card details (ideally via Checkout drop-in / hosted field so PAN never touches your server).
-2. POST `/tokens` with card + device + risk context.
-3. Store `tokenReferenceIdentifier` + `tokenNumber`; discard PAN immediately.
-4. At checkout time, POST `/cryptograms` with the stored token + current transaction details → receive `tokenAuthenticationValue`.
-5. Pass `{tokenReferenceIdentifier, tokenNumber, tokenAuthenticationValue}` to Online Payments as a network-tokenized authorization.
+Use these sample requests to understand how to interact with the Tokenization API. When generating code use these examples as a reference. They are the calls the API accepts, so if a documentation page shows a different path, header, or body shape, follow the collection. The collection has no bulk requests; build those from the *Manage bulk tokens* and *Manage bulk keys* pages.
 
-### Online (Safetech / acquirer token)
-1. POST `/acquirerToken` with just the card.
-2. Store the returned `acquirerTokenNumber` + `tokenReferenceIdentifier`.
-3. Pass to Online Payments as an acquirer-tokenized authorization (different field set than network tokens).
+### [Tokenization](https://github.com/jpmorgan-payments/api-collections/tree/refs/heads/main/merchant-services/Tokenization)
 
-### Bulk
-1. Export card vault → encrypt with bulk public key → upload to MFTS → decrypt token file from MFTS outbound → map tokens back to customer records → purge original PAN store.
+| Request | Method | Endpoint |
+| --- | --- | --- |
+| [Change Token Lifecycle](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Tokenization/Change%20Token%20Lifecycle.bru) | PATCH | `{{token_url}}/tokens/{{tokenReferenceIdentifier}}/lifecycle-states` |
+| [Get Token Assets](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Tokenization/Get%20Token%20Assets.bru) | GET | `{{token_url}}/tokens/{{tokenReferenceIdentifier}}/assets/{{assetReferenceIdentifier}}` |
+| [Get Token Details](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Tokenization/Get%20Token%20Details.bru) | GET | `{{token_url}}/tokens/{{tokenReferenceIdentifier}}/details` |
+| [Get Token Information](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Tokenization/Get%20Token%20Information.bru) | GET | `{{token_url}}/tokens/{{tokenReferenceIdentifier}}` |
+| [Health check for the Tokenization service](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Tokenization/Health%20check%20for%20the%20Tokenization%20service.bru) | GET | `{{token_url}}/healthcheck` |
+| [Request Cryptogram from Token](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Tokenization/Request%20Cryptogram%20from%20Token.bru) | POST | `{{token_url}}/cryptograms` |
+| [Token Lifecycle Information](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Tokenization/Token%20Lifecycle%20Information.bru) | GET | `{{token_url}}/tokens/{{tokenReferenceIdentifier}}/lifecycle-states` |
+| [Token Request (Network)](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Tokenization/Token%20Request%20%28Network%29.bru) | POST | `{{token_url}}/tokens` |
+| [Token Request (Safetech)](https://github.com/jpmorgan-payments/api-collections/blob/refs/heads/main/merchant-services/Tokenization/Token%20Request%20%28Safetech%29.bru) | POST | `{{token_url}}/acquirerToken` |
 
-## CAT smoke test
+## Common Pitfalls
 
-JPM publishes a Tokenization testing page on developer.payments.jpmorgan.com with canonical test card numbers — cross-reference for the current scenarios. Minimum smoke:
-
-- Tokenize a CAT card via `POST /tokens` (or `POST /acquirerToken` for the Safetech flow).
-- Use the resulting `tokenReferenceIdentifier` + `tokenNumber` in an Online Payments authorization → confirm approval.
-- Generate a cryptogram for the stored token via `POST /cryptograms` → use the returned `tokenAuthenticationValue` in a follow-up authorization.
-- Run a lifecycle state change (`PATCH /tokens/{id}/lifecycle-states` with `stateChangeReason: "DELETE"`).
-- For bulk mode: `GET /bulk-tokens/encryption-key`, encrypt a small (≤10 card) test file, upload to MFTS CAT folder, confirm the response token file is delivered to your outbound folder.
-
-## Common pitfalls
-
-- Storing the returned token *and* the PAN — defeats the purpose. Discard PAN immediately after tokenization.
-- Mixing CAT tokens with PROD tokens — they're not interchangeable.
-- Bulk mode without MFTS keys provisioned → uploads silently fail at the gateway.
+- Storing the returned token *and* the PAN — defeats the purpose. Discard the PAN and CVV immediately after tokenization.
+- Mixing CAT tokens with PROD tokens — they're not interchangeable. Tokenize production cards against the PROD host, and don't copy CAT token data into production.
+- Uploading to MFTS before the key exchange — encrypt the file with J.P. Morgan's key (`GET /bulk-tokens/encryption-key`) and register yours (`POST /bulk-tokens/encryption-key`) first. The upload itself won't report a failure, so track each file with `GET /bulk-tokens/{merchant-file-identifier}` instead of waiting for the response file.
+- Sending `PAN2SFT` files through MFTS — MFTS only produces network tokens (`PAN2NWT`, `SFT2NWT`). Upload `PAN2SFT` files with `POST /bulk-tokens`.

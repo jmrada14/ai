@@ -30,7 +30,7 @@ Each skill folder is composed of three layers:
 | ----- | ---- | ------- |
 | **SKILL.md** | `SKILL.md` | Entry point — the playbook the agent follows |
 | **References** | `references/` | Per-API deep dives with flow diagrams, endpoint tables, field constraints, and sample requests |
-| **Examples / Templates / Scripts** | `examples/`, `templates/`, `scripts/` | Reference samples and helpers the skill points to during execution |
+| **Templates / Scripts** | `templates/`, `scripts/` | Helpers the skill points to during execution |
 
 ### API Coverage
 
@@ -38,7 +38,7 @@ Each skill folder is composed of three layers:
 | --- | -------------- | -------------- |
 | **Checkout** | `skills/jpm-merchant-integrations/references/checkout.md` | Drop-in UI, Hosted Payments Page, checkout sessions, capture methods, field constraints |
 | **Online Payments** | `skills/jpm-merchant-integrations/references/online-payments.md` | Full payment lifecycle (auth, capture, void, refund), card / wallet / APM methods, inline 3-D Secure |
-| **Tokenization** | `skills/jpm-merchant-integrations/references/tokenization.md` | Swap a card PAN for a merchant-scoped token to reduce PCI scope and store tokens instead of card data |
+| **Tokenization** | `skills/jpm-merchant-integrations/references/tokenization.md` | Swap a card PAN for a network or Safetech token to reduce PCI scope and store tokens instead of card data |
 | **3-D Secure (Standalone)** | `skills/jpm-merchant-integrations/references/3d-secure.md` | Standalone 3DS authentication (use the inline `threeDS` field in Online Payments when bundling with an auth) |
 | **Account Updater** | `skills/jpm-merchant-integrations/references/account-updater.md` | Keep stored cards current as issuers reissue them — inquiry mode (sync) or card-registration mode (async, via `jpm-notifications`) |
 | **Reporting** | `skills/jpm-merchant-integrations/references/reporting.md` | Configure, schedule, and download reports across the payment lifecycle — preset reports (quick integration) or custom field/filter/schedule selection, plus report configs and reporting groups |
